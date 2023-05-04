@@ -15,9 +15,9 @@ async fn main()->Result<(),Box<dyn std::error::Error>> {
         monitor_timer:0x0002,
     };
 
-    //　MCProtocolのインスタンスを生成
+    // MCProtocolのインスタンスを生成
     let mut mc_protocol = QMCProtocol::new(ip,port,config);
-    //　接続処理を実行
+    // 接続処理を実行
     match mc_protocol.connect().await{
         Ok(_) => println!("接続成功"),
         Err(e) => {

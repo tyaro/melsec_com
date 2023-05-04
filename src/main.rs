@@ -18,8 +18,14 @@ async fn main()->Result<(),Box<dyn std::error::Error>> {
     //　MCProtocolのインスタンスを生成
     let mut mc_protocol = QMCProtocol::new(ip,port,config);
     //　接続処理を実行
-    mc_protocol.connect().await?;
-
+    match mc_protocol.connect().await{
+        Ok(_) => println!("接続成功"),
+        Err(e) => {
+            println!("接続失敗");
+            println!("{:?}",e);
+            return Ok(());
+        },
+    }
 
     // ワード一括読込
     let result = mc_protocol.block_read_word("W20", 20).await;

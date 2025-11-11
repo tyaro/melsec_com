@@ -1,3 +1,13 @@
+# melsec_com
+
+配布用リポジトリ（各クレート）:
+
+- melsec_mc (core library, 通信ライブラリ): https://github.com/tyaro/melsec_mc
+- melsec_mc_mock (モック/サーバー): https://github.com/tyaro/melsec_mc_mock
+- melsec_mc_mock_gui (GUI / Tauri ベース): https://github.com/tyaro/melsec_mc_mock_gui
+
+---
+
 # build 時の注意
 
 MELSEC MC Rust クレートのビルド成果物（バイナリやライブラリ）は `target` ディレクトリに出力されます。

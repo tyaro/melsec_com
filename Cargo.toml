@@ -1,6 +1,6 @@
 [package]
 name = "melsec_mc"
-version = "0.4.12"
+version = "0.4.13"
 edition = "2021"
 authors = ["tyaro"]
 description = "A small Rust library to talk to Mitsubishi PLCs via MC Protocol (Ethernet) - transport layer and helpers"
@@ -9,7 +9,7 @@ repository = "https://github.com/tyaro/melsec_mc"
 readme = "README.md"
 documentation = "https://docs.rs/melsec_mc"
 homepage = "https://github.com/tyaro/melsec_mc"
-keywords = ["melsec", "plc", "mc-protocol", "industrial", "automation", "tokio"]
+keywords = ["melsec", "plc", "mc-protocol", "industrial", "automation"]
 categories = ["network-programming", "embedded"]
 exclude = [
 	"target/**",

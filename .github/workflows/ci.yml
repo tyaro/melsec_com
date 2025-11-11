@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'melsec_mc/**'
+      - '.github/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'melsec_mc/**'
+      - '.github/**'
+
+jobs:
+  build:
+    name: Build and test melsec_mc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache cargo registry and git index
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build (melsec_mc)
+        run: cargo build -p melsec_mc --verbose
+
+      - name: Test (melsec_mc library only)
+        # Integration tests in this crate depend on the separate `melsec_mc_mock` helper
+        # which is not available to this monorepo CI job. Run library tests only to
+        # validate public API and avoid failing on environment-dependent integration tests.
+        run: cargo test -p melsec_mc --lib --verbose

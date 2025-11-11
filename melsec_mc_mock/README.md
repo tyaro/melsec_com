@@ -1,20 +1,22 @@
 # melsec_mc_mock
 
-Lightweight mock PLC server for local testing of `melsec_mc` clients.
+## 概要
 
-This crate provides a programmatic DeviceMap and a placeholder TCP listener. It is intended
-to be extended to wire incoming MC payloads to the existing `melsec_mc` parser/response
-builders and serve realistic protocol replies.
+`melsec_mc_mock` は `melsec_mc` コアを利用するモックサーバーです。開発やテスト用途に使用します。
 
-Usage (development):
+## 主な機能
 
+- 仮想 PLC ハンドラの提供
+- テスト／デバッグ用の応答シミュレーション
+- フレームレベルでの差分検証ツール
+
+## 起動例（開発）
+
+```powershell
+cd melsec_mc_mock
+cargo run --release --bin mock-server -- --listen 127.0.0.1:5000
 ```
-cargo run -p melsec_mc_mock --bin mock-server -- --listen 127.0.0.1:5000
-```
 
-Admin HTTP API
+## 開発について
 
-The admin HTTP API has been removed from the mock server binary. Use the
-programmatic `MockServer` API (`set_words` / `get_words`) or send MC frames
-directly over UDP/TCP to interact with the server. Update any scripts or CI
-that previously used the `--admin` flag to the new approach.
+実装・開発はこのモノレポ `melsec_com` で行っています。配布用リポジトリは [tyaro/melsec_mc_mock](https://github.com/tyaro/melsec_mc_mock) を参照してください。

@@ -2078,11 +2078,10 @@ checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
 
 [[package]]
 name = "melsec_mc"
-version = "0.4.8"
+version = "0.4.10"
 dependencies = [
  "env_logger",
  "log",
- "melsec_mc_mock",
  "once_cell",
  "serde",
  "serde_json",

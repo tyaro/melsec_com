@@ -47,6 +47,9 @@ pub mod plc_series;
 
 pub use endpoint::ConnectionTarget;
 pub use error::MelsecError;
+// Re-export commonly used types for ergonomic imports in examples and consumer code.
+pub use mc_client::McClient;
+pub use mc_client::{FromWords, ToWords};
 
 /// Initialize embedded default definitions (commands and error codes) into global registries.
 ///

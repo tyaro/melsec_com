@@ -2,9 +2,9 @@
 
 配布用リポジトリ（各クレート）:
 
-- melsec_mc (core library, 通信ライブラリ): https://github.com/tyaro/melsec_mc
-- melsec_mc_mock (モック/サーバー): https://github.com/tyaro/melsec_mc_mock
-- melsec_mc_mock_gui (GUI / Tauri ベース): https://github.com/tyaro/melsec_mc_mock_gui
+- [melsec_mc](https://github.com/tyaro/melsec_mc) (core library, 通信ライブラリ)
+- [melsec_mc_mock](https://github.com/tyaro/melsec_mc_mock) (モック/サーバー)
+- [melsec_mc_mock_gui](https://github.com/tyaro/melsec_mc_mock_gui) (GUI / Tauri ベース)
 
 ---
 

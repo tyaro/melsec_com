@@ -29,33 +29,158 @@ jobs:
             echo "ERROR: secret SYNC_PAT is not set. Please add a Personal Access Token with repo access to repository secrets." && exit 1
           fi
           git clone "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" target
+          cd target
+          git fetch origin --prune
 
-      - name: Copy melsec_mc files
+      - id: copy
+        name: Copy melsec_mc files
         run: |
+          # copy source into cloned target repo using a stable branch name so we can update the same PR
           rsync -a --delete melsec_mc/ target/
           cd target
-          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
-          BRANCH=sync/melsec_mc-${SHORT_SHA}
-          git checkout -b ${BRANCH}
+          BRANCH=sync/melsec_mc
+          # try to base the branch on origin if it exists, otherwise create new local branch
+          if git show-ref --verify --quiet refs/remotes/origin/${BRANCH}; then
+            git checkout -B ${BRANCH} origin/${BRANCH}
+          else
+            git checkout -B ${BRANCH}
+          fi
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
-            git push origin ${BRANCH}
+            git push origin ${BRANCH} --force
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           else
-            echo "No changes to push"
-            echo "PUSHED_BRANCH=" >> $GITHUB_OUTPUT
+            echo "No changes to push. Ensure branch exists on remote or run will still attempt PR deduplication."
+            # push branch in case it doesn't exist yet (no-op if already exists)
+            git push origin ${BRANCH} || true
+            echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create PR on tyaro/melsec_mc
-        if: steps.copy_melsec_mc_files.outputs.PUSHED_BRANCH != ''
+      - name: Create or update PR on tyaro/melsec_mc
+        if: steps.copy.outputs.PUSHED_BRANCH != ''
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+          PUSHED_BRANCH: ${{ steps.copy.outputs.PUSHED_BRANCH }}
+        run: |
+          OWNER=tyaro
+          REPO=melsec_mc
+          BRANCH=${PUSHED_BRANCH}
+          TITLE="Sync melsec_mc from tyaro/melsec_com ${GITHUB_SHA::7}"
+          BODY="Automated sync of the melsec_mc directory from tyaro/melsec_com commit ${GITHUB_SHA}."
+
+          # ensure branch exists on the remote before creating/updating PR
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${SYNC_PAT}" "https://api.github.com/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}")
+          if [ "${STATUS}" -ne 200 ]; then
+            echo "Branch ${BRANCH} does not exist on ${OWNER}/${REPO}, skipping PR creation." && exit 0
+          fi
+
+          # check for existing open PR from this head branch
+          PR_JSON=$(curl -s -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&head=${OWNER}:${BRANCH}")
+          PR_NUMBER=$(echo "$PR_JSON" | python3 -c "import sys,json; d=sys.stdin.read(); j=json.loads(d) if d.strip() else []; print(j[0]['number'] if j else '')")
+
+          if [ -n "${PR_NUMBER}" ]; then
+            echo "Found existing PR #${PR_NUMBER}, updating title/body."
+            curl -s -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}" \
+              -d "{\"title\":\"${TITLE}\",\"body\":\"${BODY}\"}"
+            echo "Updated PR #${PR_NUMBER}."
+          else
+            echo "No existing PR found, creating a new PR: ${TITLE} -> ${OWNER}/${REPO}:main"
+            curl -s -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
+              -d "{\"title\":\"${TITLE}\",\"head\":\"${BRANCH}\",\"base\":\"main\",\"body\":\"${BODY}\"}"
+          fi
+name: Sync melsec_mc to tyaro/melsec_mc
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'melsec_mc/**'
+
+jobs:
+  sync:
+    name: Sync melsec_mc
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Prepare
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone target repo
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
-          BRANCH=$(cat target/.git/HEAD | sed -n 's/ref: refs\/heads\///p')
+          if [ -z "${SYNC_PAT}" ]; then
+            echo "ERROR: secret SYNC_PAT is not set. Please add a Personal Access Token with repo access to repository secrets." && exit 1
+          fi
+          git clone "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" target
+          cd target
+          git fetch origin --prune
+
+      - id: copy
+        name: Copy melsec_mc files
+        run: |
+          # copy source into cloned target repo using a stable branch name so we can update the same PR
+          rsync -a --delete melsec_mc/ target/
+          cd target
+          BRANCH=sync/melsec_mc
+          # try to base the branch on origin if it exists, otherwise create new local branch
+          if git show-ref --verify --quiet refs/remotes/origin/${BRANCH}; then
+            git checkout -B ${BRANCH} origin/${BRANCH}
+          else
+            git checkout -B ${BRANCH}
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            git add .
+            git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
+            git push origin ${BRANCH} --force
+            echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
+          else
+            echo "No changes to push. Ensure branch exists on remote or run will still attempt PR deduplication."
+            # push branch in case it doesn't exist yet (no-op if already exists)
+            git push origin ${BRANCH} || true
+            echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create or update PR on tyaro/melsec_mc
+        if: steps.copy.outputs.PUSHED_BRANCH != ''
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+          PUSHED_BRANCH: ${{ steps.copy.outputs.PUSHED_BRANCH }}
+        run: |
+          OWNER=tyaro
+          REPO=melsec_mc
+          BRANCH=${PUSHED_BRANCH}
           TITLE="Sync melsec_mc from tyaro/melsec_com ${GITHUB_SHA::7}"
           BODY="Automated sync of the melsec_mc directory from tyaro/melsec_com commit ${GITHUB_SHA}."
-          echo "Creating PR: ${TITLE} -> tyaro/melsec_mc:main"
-          curl -s -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/tyaro/melsec_mc/pulls \
-            -d "{\"title\":\"${TITLE}\",\"head\":\"${BRANCH}\",\"base\":\"main\",\"body\":\"${BODY}\"}"
+
+          # ensure branch exists on the remote before creating/updating PR
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token ${SYNC_PAT}" "https://api.github.com/repos/${OWNER}/${REPO}/git/ref/heads/${BRANCH}")
+          if [ "${STATUS}" -ne 200 ]; then
+            echo "Branch ${BRANCH} does not exist on ${OWNER}/${REPO}, skipping PR creation." && exit 0
+          fi
+
+          # check for existing open PR from this head branch
+      PR_JSON=$(curl -s -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${OWNER}/${REPO}/pulls?state=open&head=${OWNER}:${BRANCH}")
+      PR_NUMBER=$(echo "$PR_JSON" | python3 -c 'import sys,json; d=sys.stdin.read(); j=json.loads(d) if d.strip() else []; print(j[0]["number"] if j else "")')
+
+          if [ -n "${PR_NUMBER}" ]; then
+            echo "Found existing PR #${PR_NUMBER}, updating title/body."
+            curl -s -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${PR_NUMBER}" \
+              -d "{\"title\":\"${TITLE}\",\"body\":\"${BODY}\"}"
+            echo "Updated PR #${PR_NUMBER}."
+          else
+            echo "No existing PR found, creating a new PR: ${TITLE} -> ${OWNER}/${REPO}:main"
+            curl -s -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
+              -d "{\"title\":\"${TITLE}\",\"head\":\"${BRANCH}\",\"base\":\"main\",\"body\":\"${BODY}\"}"
+          fi

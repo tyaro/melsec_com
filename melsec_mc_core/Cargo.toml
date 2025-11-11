@@ -1,6 +1,6 @@
 [package]
 name = "melsec_mc"
-version = "0.4.3"
+version = "0.4.8"
 edition = "2021"
 authors = ["tyaro"]
 description = "A small Rust library to talk to Mitsubishi PLCs via MC Protocol (Ethernet) - transport layer and helpers"
@@ -56,5 +56,5 @@ crate-type = ["cdylib", "rlib"]
 members = [
 	".",
 	"melsec_mc_mock",
-	"melsec_mc_gui"
+	"melsec_mc_mock_gui"
 ]

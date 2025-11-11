@@ -1,20 +1,7 @@
-# melsec_mc_mock
+# Tauri + Vanilla
 
-Lightweight mock PLC server for local testing of `melsec_mc` clients.
+This template should help get you started developing with Tauri in vanilla HTML, CSS and Javascript.
 
-This crate provides a programmatic DeviceMap and a placeholder TCP listener. It is intended
-to be extended to wire incoming MC payloads to the existing `melsec_mc` parser/response
-builders and serve realistic protocol replies.
+## Recommended IDE Setup
 
-Usage (development):
-
-```
-cargo run -p melsec_mc_mock --bin mock-server -- --listen 127.0.0.1:5000
-```
-
-Admin HTTP API
-
-The admin HTTP API has been removed from the mock server binary. Use the
-programmatic `MockServer` API (`set_words` / `get_words`) or send MC frames
-directly over UDP/TCP to interact with the server. Update any scripts or CI
-that previously used the `--admin` flag to the new approach.
+- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

@@ -1,0 +1,31 @@
+[package]
+name = "melsec_mc_mock"
+version = "0.1.0"
+edition = "2021"
+authors = ["tyaro"]
+description = "A lightweight mock PLC server for local testing of melsec_mc clients"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["net", "rt-multi-thread", "macros"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+anyhow = "1.0"
+tracing-subscriber = "0.3"
+
+toml = "0.9.8"
+
+# used to manipulate socket options (SO_LINGER) for test/debug behavior
+socket2 = "0.6"
+
+# depend on local crate to reuse parsers/builders
+melsec_mc = { path = ".." }
+
+# NOTE: previous attempt used axum/hyper. Current admin API uses a minimal tokio-based
+# implementation; remove axum/hyper to avoid unused deps. If we switch to axum later,
+# re-add the dependency.
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

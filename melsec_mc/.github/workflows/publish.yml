@@ -24,6 +24,20 @@ jobs:
       - name: Build (verify)
         run: cargo build --manifest-path ./Cargo.toml --release
 
+      - name: Ensure Cargo.lock is committed
+        run: |
+          # In some environments cargo may update Cargo.lock during build.
+          # Commit the updated lockfile so `cargo publish` doesn't fail due to a dirty working tree.
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f Cargo.lock ]; then
+            git add Cargo.lock || true
+            # commit only if there are staged changes
+            if ! git diff --cached --quiet; then
+              git commit -m "ci: update Cargo.lock" || true
+            fi
+          fi
+
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

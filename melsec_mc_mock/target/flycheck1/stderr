@@ -1,4 +1,3 @@
-    Blocking waiting for file lock on package cache
     Updating crates.io index
 error: failed to get `melsec_mc` as a dependency of package `melsec_mc_mock v0.1.0 (D:\develop\melsec_com\melsec_mc_mock)`
 
@@ -6,10 +5,10 @@ Caused by:
   failed to load source for dependency `melsec_mc`
 
 Caused by:
-  Unable to update D:\develop\melsec_com
+  Unable to update D:\develop\melsec_com\melsec_mc
 
 Caused by:
-  failed to read `D:\develop\melsec_com\Cargo.toml`
+  failed to read `D:\develop\melsec_com\melsec_mc\Cargo.toml`
 
 Caused by:
-  指定されたファイルが見つかりません。 (os error 2)
+  指定されたパスが見つかりません。 (os error 3)

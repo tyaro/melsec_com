@@ -24,6 +24,6 @@ tracing = "0.1"
 
 # reuse mock and core crates from workspace
 melsec_mc_mock = { path = "../melsec_mc_mock" }
-melsec_mc = { path = ".." }
+melsec_mc = { path = "../melsec_mc" }
 
 

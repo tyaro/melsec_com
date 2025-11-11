@@ -1,6 +1,6 @@
 [package]
 name = "melsec_mc"
-version = "0.4.10"
+version = "0.4.12"
 edition = "2021"
 authors = ["tyaro"]
 description = "A small Rust library to talk to Mitsubishi PLCs via MC Protocol (Ethernet) - transport layer and helpers"

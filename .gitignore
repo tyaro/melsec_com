@@ -78,3 +78,5 @@ target/
 # Ignore any nested Cargo target directories in workspace members
 **/target/
 **/target/**
+
+temp/**

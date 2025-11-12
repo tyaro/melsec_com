@@ -58,5 +58,8 @@ crate-type = ["cdylib", "rlib"]
 
 
 # 2) ユニットテスト (cfg(test)) のみで依存を有効にする場合
-[target.'cfg(test)'.dependencies]
-melsec_mc_mock = { path = "../melsec_mc_mock" }
+## NOTE: do NOT depend on `melsec_mc_mock` from `melsec_mc` — that creates a cyclic
+## dependency when `melsec_mc_mock` itself depends on `melsec_mc`.
+## Tests that require the mock should be run from the workspace root or placed in a
+## separate integration-tests crate that depends on both `melsec_mc` and
+## `melsec_mc_mock` to avoid cycles.

@@ -80,3 +80,14 @@ target/
 **/target/**
 
 temp/**
+
+# Ignore CI/workflow artifacts and push-trace logs/backups created by sync runs
+/.github/artifacts/
+.github/artifacts/**
+/artifacts/
+/artifacts-*/
+/tmp_artifacts/
+
+# push-trace runtime/log and backups
+**/push-trace*
+push-trace*

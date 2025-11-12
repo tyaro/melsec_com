@@ -27,8 +27,10 @@ chmod 600 "$PUSH_TRACE" || true
 echo "PUSH_TRACE=$PUSH_TRACE" >> "$GITHUB_ENV" || true
 echo "=== push-trace started: $(date -u) ===" >> "$PUSH_TRACE"
 echo "DEBUG: current dir: $(pwd)" >> "$PUSH_TRACE"
+echo "DEBUG: created PUSH_TRACE at $PUSH_TRACE" >> "$PUSH_TRACE"
 
 create_or_update_pr() {
+  echo "DEBUG: entering create_or_update_pr" | tee -a "$PUSH_TRACE"
   if [ "${DRY_RUN}" = "1" ]; then
     echo "DRY_RUN=1: skipping PR create/update" | tee -a "$PUSH_TRACE"
     return
@@ -130,6 +132,7 @@ fi
 
 # sync files
 rsync -a --delete --exclude='.github/artifacts' --exclude='*.log' --exclude='*.bak' ../melsec_mc/ .
+echo "DEBUG: completed rsync, current dir $(pwd)" >> "$PUSH_TRACE"
 BRANCH=sync/melsec_mc
 
 git fetch origin main || true
@@ -164,6 +167,7 @@ if [ -n "$(git status --porcelain)" ]; then
         git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
       if [ ${PIPESTATUS[0]} -eq 0 ]; then
         echo "push succeeded" | tee -a "$PUSH_TRACE"
+        echo "DEBUG: about to call create_or_update_pr (post-push)" >> "$PUSH_TRACE"
         create_or_update_pr || true
         break
       else

@@ -2,6 +2,7 @@
 set -euo pipefail
 
 DRY_RUN="${DRY_RUN:-0}"
+GITHUB_SHA="${GITHUB_SHA:-unknown}"
 
 # if not dry-run, SYNC_PAT is required
 if [ "${DRY_RUN}" != "1" ] && [ -z "${SYNC_PAT:-}" ]; then
@@ -157,8 +158,17 @@ fi
 
 if [ -n "$(git status --porcelain)" ]; then
   echo "DEBUG: detected changes to commit" >> "$PUSH_TRACE"
-  git add .
-  git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
+  git add . 2>&1 | tee -a "$PUSH_TRACE" || true
+  echo "ABOUT TO COMMIT" | tee -a "$PUSH_TRACE"
+  # commit safely even when GITHUB_SHA is unset
+  set +e
+  git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA:-unknown}" 2>&1 | tee -a "$PUSH_TRACE"
+  commit_status=${PIPESTATUS[0]:-0}
+  set -e
+  echo "COMMIT_EXIT=${commit_status}" >> "$PUSH_TRACE"
+  if [ "$commit_status" -ne 0 ]; then
+    echo "NOTICE: commit exited with status ${commit_status} (may be nothing to commit)" | tee -a "$PUSH_TRACE"
+  fi
   git config --local --unset-all http.https://github.com/.extraheader || true
   git config --local --unset-all credential.helper || true
   for i in 1 2 3 4 5; do

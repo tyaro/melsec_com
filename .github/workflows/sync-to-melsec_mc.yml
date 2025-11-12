@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      SYNC_PAT: ${{ secrets.SYNC_PAT }}
     steps:
       - name: Checkout source repo
         uses: actions/checkout@v4
@@ -27,9 +29,7 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Clone target repo
-        if: ${{ secrets.SYNC_PAT != '' }}
-        env:
-          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        if: ${{ env.SYNC_PAT != '' }}
         run: |
           if [ -z "${SYNC_PAT}" ]; then
             echo "ERROR: secret SYNC_PAT is not set. Please add a Personal Access Token with repo access to repository secrets."
@@ -40,9 +40,7 @@ jobs:
 
       - id: copy
         name: Copy melsec_mc files
-        if: ${{ secrets.SYNC_PAT != '' }}
-        env:
-          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        if: ${{ env.SYNC_PAT != '' }}
         working-directory: target
         run: |
           # working-directory is 'target' (the cloned tyaro/melsec_mc repo)
@@ -125,9 +123,8 @@ jobs:
           fi
 
       - name: Create or update PR
-        if: ${{ secrets.SYNC_PAT != '' && steps.copy.outputs.PUSHED_BRANCH != '' }}
+        if: ${{ env.SYNC_PAT != '' && steps.copy.outputs.PUSHED_BRANCH != '' }}
         env:
-          SYNC_PAT: ${{ secrets.SYNC_PAT }}
           PUSHED_BRANCH: ${{ steps.copy.outputs.PUSHED_BRANCH }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
@@ -135,7 +132,7 @@ jobs:
           ./.github/scripts/sync-create-pr.sh
 
       - name: Ensure push trace exists
-        if: ${{ secrets.SYNC_PAT != '' }}
+        if: ${{ env.SYNC_PAT != '' }}
         run: |
           # the push step writes push-trace.log in the 'target' working directory
           if [ -f target/push-trace.log ]; then

@@ -30,6 +30,38 @@ jobs:
         with:
           name: push-trace
           path: push-trace-runtime.log
+name: 'Test: push-trace creation'
+
+on:
+  push:
+    branches: [ tmp/fix-sync-workflow ]
+    paths:
+      - 'melsec_mc/**'
+
+jobs:
+  trace-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create runner-local push trace
+        run: |
+          set -euo pipefail
+          TMP_DIR="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$TMP_DIR"
+          PUSH_TRACE="$(mktemp "$TMP_DIR/push-trace-XXXXXX.log")"
+          chmod 600 "$PUSH_TRACE" || true
+          echo "PUSH_TRACE=$PUSH_TRACE" >> $GITHUB_ENV
+          echo "=== push-trace test started: $(date -u) ===" >> "$PUSH_TRACE"
+          echo "trace test content" >> "$PUSH_TRACE"
+          cp "$PUSH_TRACE" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+
+      - name: Upload push trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: push-trace-runtime.log
 name: 'Test: sync melsec_mc (branch test)'
 
 on:

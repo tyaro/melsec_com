@@ -1,0 +1,37 @@
+name: 'Test: sync-run dry-run (alternate)'
+
+on:
+  push:
+    branches: [ tmp/fix-sync-workflow ]
+    paths:
+      - 'melsec_mc/**'
+
+jobs:
+  trace-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run sync-run.sh (DRY_RUN)
+        env:
+          DRY_RUN: '1'
+        run: |
+          chmod +x ./.github/scripts/sync-run.sh
+          echo "Starting sync-run.sh in DRY_RUN=1"
+          DRY_RUN=1 ./.github/scripts/sync-run.sh || true
+
+      - name: Copy push trace into workspace
+        run: |
+          if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
+            cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+            ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+          else
+            echo "No push trace file to upload"
+          fi
+
+      - name: Upload push trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: push-trace-runtime.log

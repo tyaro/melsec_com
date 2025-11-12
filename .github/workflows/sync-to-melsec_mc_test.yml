@@ -1,0 +1,54 @@
+name: 'Test: sync melsec_mc (branch test)'
+
+on:
+  push:
+    branches: [ tmp/fix-sync-workflow ]
+    # keep path filter so it's only triggered when melsec_mc is touched
+    paths:
+      - 'melsec_mc/**'
+
+jobs:
+  sync:
+    name: Test sync melsec_mc
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SYNC_PAT: ${{ secrets.SYNC_PAT }}
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Print debug info
+        run: |
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "RUNNER_TEMP=${RUNNER_TEMP:-/tmp}"
+          ls -la . || true
+
+      - name: Run sync script (test)
+        if: ${{ secrets.SYNC_PAT != '' }}
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        run: |
+          chmod +x ./.github/scripts/sync-run.sh
+          ./.github/scripts/sync-run.sh || true
+
+      - name: Copy push trace for upload (if present)
+        run: |
+          if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
+            cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+            ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+          else
+            echo "No push trace file to upload"
+          fi
+
+      - name: Upload push trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: push-trace-runtime.log
+          if-no-files-found: warn
+          compression-level: 6

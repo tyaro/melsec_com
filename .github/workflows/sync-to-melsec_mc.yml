@@ -62,14 +62,29 @@ jobs:
             echo "DEBUG: clearing http extraheader and credential helper"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
-            echo "DEBUG: pushing to explicit PAT URL"
-            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force
+            echo "DEBUG: pushing to explicit PAT URL (with retries)"
+            for i in 1 2 3; do
+              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force; then
+                echo "push succeeded"
+                break
+              else
+                echo "push failed, retrying ($i)"
+                sleep 2
+              fi
+            done
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           else
             echo "DEBUG: nothing to commit, ensure branch exists on remote"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
-            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true
+            for i in 1 2 3; do
+              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true; then
+                break
+              else
+                echo "push failed, retrying ($i)"
+                sleep 2
+              fi
+            done
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           fi
 

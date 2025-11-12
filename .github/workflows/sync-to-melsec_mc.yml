@@ -44,58 +44,74 @@ jobs:
         working-directory: target
         run: |
           # working-directory is 'target' (the cloned tyaro/melsec_mc repo)
-          # ensure we always capture push traces even if git push fails
           set -o pipefail
-          touch push-trace.log
-          echo "=== push-trace started: $(date -u) ===" >> push-trace.log
+          # write push trace outside of the repository worktree to avoid leaking into commits
+          TMP_DIR="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$TMP_DIR"
+          # create a unique temp file for this run to avoid collisions between concurrent jobs
+          PUSH_TRACE="$(mktemp "$TMP_DIR/push-trace-XXXXXX.log")"
+          chmod 600 "$PUSH_TRACE" || true
+          # expose for subsequent steps in the job
+          echo "PUSH_TRACE=$PUSH_TRACE" >> $GITHUB_ENV
+          echo "=== push-trace started: $(date -u) ===" >> "$PUSH_TRACE"
           echo "DEBUG: current dir: $(pwd)"
           echo "DEBUG: git remote before set-url:" && git remote -v || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"
           echo "DEBUG: git remote after set-url:" && git remote -v || true
           # ensure the checked-out source repo is not shallow (avoid missing objects when packing)
-          echo "DEBUG: ensure source checkout is unshallowed if needed" >> push-trace.log
+          echo "DEBUG: ensure source checkout is unshallowed if needed" >> "$PUSH_TRACE"
           # the source checkout lives one level up from 'target'
           if git -C .. rev-parse --is-shallow-repository >/dev/null 2>&1; then
             IS_SHALLOW=$(git -C .. rev-parse --is-shallow-repository)
             if [ "$IS_SHALLOW" = "true" ]; then
-              echo "source repo is shallow; running git fetch --unshallow" >> push-trace.log || true
+              echo "source repo is shallow; running git fetch --unshallow" >> "$PUSH_TRACE" || true
               git -C .. fetch --prune --unshallow || true
             fi
           fi
-          # copy source files from the checked-out repo into this clone
-          rsync -a --delete ../melsec_mc/ .
+          # copy source files from the checked-out repo into this clone, excluding logs/artifacts
+          rsync -a --delete --exclude='.github/artifacts' --exclude='*.log' --exclude='*.bak' ../melsec_mc/ .
           BRANCH=sync/melsec_mc
           echo "DEBUG: branches (local and remote):" && git branch -a || true
-          # try to base the branch on origin if it exists, otherwise create new local branch
-          if git show-ref --verify --quiet refs/remotes/origin/${BRANCH}; then
-            git checkout -B ${BRANCH} origin/${BRANCH}
+          # Always base the sync branch on origin/main so the PR will have a common history
+          git fetch origin main || true
+          if git show-ref --verify --quiet refs/remotes/origin/main; then
+            git checkout -B ${BRANCH} origin/main
           else
+            # fallback: create the branch locally (should be rare)
             git checkout -B ${BRANCH}
           fi
           echo "DEBUG: branch after checkout:" && git branch -vv || true
           echo "DEBUG: git status (porcelain):" && git status --porcelain || true
           echo "DEBUG: ls-remote origin for branch:" && git ls-remote origin ${BRANCH} || true
+          # detect any dangerous untracked files that are not excluded and abort
+          UNTRACKED=$(git ls-files --others --exclude-standard || true)
+          if [ -n "$UNTRACKED" ]; then
+            echo "DEBUG: untracked files present:" >> "$PUSH_TRACE"
+            echo "$UNTRACKED" >> "$PUSH_TRACE"
+            echo "$UNTRACKED" | grep -E '\.github/artifacts|\.bak|push-trace' >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "ERROR: dangerous untracked files would be committed. Aborting." | tee -a "$PUSH_TRACE"
+              echo "$UNTRACKED" | tee -a "$PUSH_TRACE"
+              exit 1
+            fi
+          fi
           if [ -n "$(git status --porcelain)" ]; then
-            # prevent committing local trace/log files
-            echo "push-trace.log" >> .git/info/exclude || true
-            git rm --cached -r --ignore-unmatch push-trace.log || true
+            # ensure we don't accidentally commit any trace files; trace file is outside worktree
             git add .
             git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
             echo "DEBUG: clearing http extraheader and credential helper"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
             echo "DEBUG: pushing to explicit PAT URL (with retries/backoff)"
-            # retry with linear backoff: attempts=5, sleep = i*8 seconds
             for i in 1 2 3 4 5; do
-              # capture detailed git traces to push-trace.log for debugging
+              # capture detailed git traces to PUSH_TRACE for debugging (outside repo)
               GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
-                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force 2>&1 | tee -a push-trace.log
+                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
               if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "push succeeded"
+                echo "push succeeded" | tee -a "$PUSH_TRACE"
                 break
               else
-                echo "push failed, retrying ($i)"
-                # wait ~30 seconds between retries to reduce transient remote conflicts
+                echo "push failed, retrying ($i)" | tee -a "$PUSH_TRACE"
                 sleep 30
               fi
             done
@@ -104,18 +120,14 @@ jobs:
             echo "DEBUG: nothing to commit, ensure branch exists on remote"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
-            # ensure we don't mask failures with '|| true' and use same backoff
             for i in 1 2 3 4 5; do
-              # capture detailed git traces to push-trace.log for debugging
-              # force the push to ensure the sync branch on target is overwritten
               GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
-                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force 2>&1 | tee -a push-trace.log
+                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
               if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                echo "push (forced) succeeded or branch exists"
+                echo "push (forced) succeeded or branch exists" | tee -a "$PUSH_TRACE"
                 break
               else
-                echo "push failed, retrying ($i)"
-                # wait ~30 seconds between retries
+                echo "push failed, retrying ($i)" | tee -a "$PUSH_TRACE"
                 sleep 30
               fi
             done
@@ -134,10 +146,36 @@ jobs:
       - name: Ensure push trace exists
         if: ${{ env.SYNC_PAT != '' }}
         run: |
-          # the push step writes push-trace.log in the 'target' working directory
-          if [ -f target/push-trace.log ]; then
-            echo "push trace found"
+          # ensure there is a push trace file in runner temp; prefer already-set PUSH_TRACE from earlier step
+          TMP_DIR="${RUNNER_TEMP:-/tmp}"
+          mkdir -p "$TMP_DIR"
+          if [ -n "${PUSH_TRACE:-}" ]; then
+            echo "push trace already set: $PUSH_TRACE"
           else
-            echo "no push trace generated" > target/push-trace.log
+            PUSH_TRACE="$(mktemp "$TMP_DIR/push-trace-XXXXXX.log")"
+            chmod 600 "$PUSH_TRACE" || true
+            echo "PUSH_TRACE=$PUSH_TRACE" >> $GITHUB_ENV
+            echo "no push trace generated" > "$PUSH_TRACE"
+            echo "push trace created at $PUSH_TRACE"
           fi
+
+      - name: Prepare push trace for upload
+        if: ${{ env.SYNC_PAT != '' }}
+        run: |
+          # copy the runtime PUSH_TRACE (from GITHUB_ENV) into the workspace so upload-artifact can find it
+          if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
+            cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+            ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+          else
+            echo "No push trace file to upload"
+          fi
+
+      - name: Upload push trace artifact
+        if: ${{ env.SYNC_PAT != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: push-trace-runtime.log
+          if-no-files-found: warn
+          compression-level: 6
 

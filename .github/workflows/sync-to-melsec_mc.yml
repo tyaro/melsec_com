@@ -59,12 +59,12 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
-            echo "DEBUG: pushing to explicit PAT URL"
-            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force
+            echo "DEBUG: pushing to explicit PAT URL (clearing extraheader)"
+            git -c http.extraheader="" push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           else
             echo "DEBUG: nothing to commit, ensure branch exists on remote"
-            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true
+            git -c http.extraheader="" push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           fi
 

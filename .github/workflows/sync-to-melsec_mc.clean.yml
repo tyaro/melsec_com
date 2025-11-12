@@ -1,0 +1,46 @@
+name: Sync melsec_mc (canonical) to tyaro/melsec_mc
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'melsec_mc/**'
+
+jobs:
+  sync:
+    name: Sync melsec_mc
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SYNC_PAT: ${{ secrets.SYNC_PAT }}
+      # default to dry-run for non-main branches when run elsewhere; main executes real sync
+      DRY_RUN: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run sync script (respects DRY_RUN)
+        run: |
+          chmod +x ./.github/scripts/sync-run.sh
+          echo "DRY_RUN=$DRY_RUN"
+          DRY_RUN=${DRY_RUN} ./.github/scripts/sync-run.sh || true
+
+      - name: Copy push trace for upload
+        run: |
+          if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
+            cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+            ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+          else
+            echo "No push trace file to upload"
+          fi
+
+      - name: Upload push trace artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: push-trace-runtime.log
+          if-no-files-found: warn

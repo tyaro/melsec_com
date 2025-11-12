@@ -1,0 +1,8 @@
+# Ignore workflow-generated artifacts and logs
+.github/artifacts/
+push-trace.log
+local-sync.log
+
+# Prevent accidental commits of large or sensitive logs
+*.log
+*.bak

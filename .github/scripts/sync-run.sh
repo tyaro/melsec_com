@@ -131,8 +131,34 @@ if git -C .. rev-parse --is-shallow-repository >/dev/null 2>&1; then
   fi
 fi
 
-# sync files
-rsync -a --delete --exclude='.github/artifacts' --exclude='*.log' --exclude='*.bak' ../melsec_mc/ .
+# sync files (exclude artifact directories and known trace files)
+rsync -a --delete \
+  --exclude='.github/artifacts/**' \
+  --exclude='**/push-trace*' \
+  --exclude='*.log' \
+  --exclude='*.bak' ../melsec_mc/ .
+echo "DEBUG: completed rsync, current dir $(pwd)" >> "$PUSH_TRACE"
+
+# Safety scan: ensure we don't commit push-trace backups or token-like strings
+echo "DEBUG: scanning workspace for push-trace files or token-like strings" | tee -a "$PUSH_TRACE"
+# If any literal push-trace files exist in the tree, abort (print paths)
+found_push_trace_files=$(find . -path './.git' -prune -o -type f -name 'push-trace*' -print | sed -n '1,5p' || true)
+if [ -n "$found_push_trace_files" ]; then
+  echo "ERROR: found candidate push-trace files in workspace; refusing to continue." | tee -a "$PUSH_TRACE"
+  find . -path './.git' -prune -o -type f -name 'push-trace*' -print | tee -a "$PUSH_TRACE" || true
+  exit 1
+fi
+
+# Grep for token-like patterns (ghp_, ghs_, x-access-token:, GITHUB_TOKEN, SYNC_PAT)
+# Exclude binary/media and .git and artifact dirs from the scan
+if grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
+     --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' >/dev/null 2>&1; then
+  echo "ERROR: potential token-like strings found in workspace; aborting. See details below:" | tee -a "$PUSH_TRACE"
+  grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
+    --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' | tee -a "$PUSH_TRACE" || true
+  exit 1
+fi
+
 echo "DEBUG: completed rsync, current dir $(pwd)" >> "$PUSH_TRACE"
 BRANCH=sync/melsec_mc
 
@@ -175,6 +201,25 @@ if [ -n "$(git status --porcelain)" ]; then
   fi
   git config --local --unset-all http.https://github.com/.extraheader || true
   git config --local --unset-all credential.helper || true
+  # before attempting push, fetch remote branch and attempt to rebase to avoid stale-info rejects
+  echo "DEBUG: fetching origin/${BRANCH} for rebase attempt" | tee -a "$PUSH_TRACE"
+  git fetch origin ${BRANCH} || true
+  if git rev-parse --verify --quiet refs/remotes/origin/${BRANCH} >/dev/null 2>&1; then
+    echo "DEBUG: origin/${BRANCH} exists — attempting to rebase onto origin/${BRANCH}" | tee -a "$PUSH_TRACE"
+    set +e
+    git rebase origin/${BRANCH} 2>&1 | tee -a "$PUSH_TRACE"
+    rebase_status=${PIPESTATUS[0]:-1}
+    set -e
+    if [ ${rebase_status} -ne 0 ]; then
+      echo "ERROR: git rebase onto origin/${BRANCH} failed (status=${rebase_status}); aborting. See push-trace for details." | tee -a "$PUSH_TRACE"
+      git rebase --abort >/dev/null 2>&1 || true
+      # exit non-zero so CI run records failure and push is not attempted
+      exit 1
+    fi
+  else
+    echo "DEBUG: origin/${BRANCH} does not exist — skipping rebase" | tee -a "$PUSH_TRACE"
+  fi
+
   for i in 1 2 3 4 5; do
     if [ "${DRY_RUN}" = "1" ]; then
       echo "DRY_RUN=1: skipping actual push (attempt $i)" | tee -a "$PUSH_TRACE"
@@ -182,7 +227,7 @@ if [ -n "$(git status --porcelain)" ]; then
       sleep 1
       break
     else
-      set +e
+      set +eA
       GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
         git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
       push_status=${PIPESTATUS[0]:-1}

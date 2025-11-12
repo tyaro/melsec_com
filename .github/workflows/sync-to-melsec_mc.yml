@@ -27,6 +27,7 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Clone target repo
+        if: ${{ secrets.SYNC_PAT != '' }}
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
@@ -39,6 +40,7 @@ jobs:
 
       - id: copy
         name: Copy melsec_mc files
+        if: ${{ secrets.SYNC_PAT != '' }}
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
         working-directory: target
@@ -76,6 +78,9 @@ jobs:
           echo "DEBUG: git status (porcelain):" && git status --porcelain || true
           echo "DEBUG: ls-remote origin for branch:" && git ls-remote origin ${BRANCH} || true
           if [ -n "$(git status --porcelain)" ]; then
+            # prevent committing local trace/log files
+            echo "push-trace.log" >> .git/info/exclude || true
+            git rm --cached -r --ignore-unmatch push-trace.log || true
             git add .
             git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
             echo "DEBUG: clearing http extraheader and credential helper"
@@ -120,7 +125,7 @@ jobs:
           fi
 
       - name: Create or update PR
-        if: steps.copy.outputs.PUSHED_BRANCH != ''
+        if: ${{ secrets.SYNC_PAT != '' && steps.copy.outputs.PUSHED_BRANCH != '' }}
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
           PUSHED_BRANCH: ${{ steps.copy.outputs.PUSHED_BRANCH }}
@@ -130,7 +135,7 @@ jobs:
           ./.github/scripts/sync-create-pr.sh
 
       - name: Ensure push trace exists
-        if: always()
+        if: ${{ secrets.SYNC_PAT != '' }}
         run: |
           # the push step writes push-trace.log in the 'target' working directory
           if [ -f target/push-trace.log ]; then
@@ -138,11 +143,4 @@ jobs:
           else
             echo "no push trace generated" > target/push-trace.log
           fi
-
-      - name: Upload push trace
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: push-trace
-          path: target/push-trace.log
 

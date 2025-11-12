@@ -65,7 +65,10 @@ jobs:
             echo "DEBUG: pushing to explicit PAT URL (with retries/backoff)"
             # retry with linear backoff: attempts=5, sleep = i*8 seconds
             for i in 1 2 3 4 5; do
-              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force; then
+              # capture detailed git traces to push-trace.log for debugging
+              GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
+                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force 2>&1 | tee -a push-trace.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
                 echo "push succeeded"
                 break
               else
@@ -81,7 +84,10 @@ jobs:
             git config --local --unset-all credential.helper || true
             # ensure we don't mask failures with '|| true' and use same backoff
             for i in 1 2 3 4 5; do
-              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH}; then
+              # capture detailed git traces to push-trace.log for debugging
+              GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
+                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} 2>&1 | tee -a push-trace.log
+              if [ ${PIPESTATUS[0]} -eq 0 ]; then
                 echo "push (no-op) succeeded or branch exists"
                 break
               else
@@ -102,4 +108,21 @@ jobs:
         run: |
           chmod +x ./.github/scripts/sync-create-pr.sh
           ./.github/scripts/sync-create-pr.sh
+
+      - name: Ensure push trace exists
+        if: always()
+        run: |
+          # the push step writes push-trace.log in the 'target' working directory
+          if [ -f target/push-trace.log ]; then
+            echo "push trace found"
+          else
+            echo "no push trace generated" > target/push-trace.log
+          fi
+
+      - name: Upload push trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: push-trace
+          path: target/push-trace.log
 

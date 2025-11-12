@@ -15,6 +15,11 @@ jobs:
     steps:
       - name: Checkout source repo
         uses: actions/checkout@v4
+        with:
+          # fetch full history to avoid shallow-clone related missing-object/index-pack failures
+          fetch-depth: 0
+          # don't persist the workflow's token in the checked-out repo (we set explicit PAT for pushes)
+          persist-credentials: false
 
       - name: Prepare
         run: |
@@ -47,6 +52,16 @@ jobs:
           echo "DEBUG: git remote before set-url:" && git remote -v || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"
           echo "DEBUG: git remote after set-url:" && git remote -v || true
+          # ensure the checked-out source repo is not shallow (avoid missing objects when packing)
+          echo "DEBUG: ensure source checkout is unshallowed if needed" >> push-trace.log
+          # the source checkout lives one level up from 'target'
+          if git -C .. rev-parse --is-shallow-repository >/dev/null 2>&1; then
+            IS_SHALLOW=$(git -C .. rev-parse --is-shallow-repository)
+            if [ "$IS_SHALLOW" = "true" ]; then
+              echo "source repo is shallow; running git fetch --unshallow" >> push-trace.log || true
+              git -C .. fetch --prune --unshallow || true
+            fi
+          fi
           # copy source files from the checked-out repo into this clone
           rsync -a --delete ../melsec_mc/ .
           BRANCH=sync/melsec_mc

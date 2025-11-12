@@ -36,26 +36,35 @@ jobs:
         name: Copy melsec_mc files
         env:
           SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        working-directory: target
         run: |
-          # enter the cloned target repo and ensure origin points to the target repo using the PAT
-          cd target
+          # working-directory is 'target' (the cloned tyaro/melsec_mc repo)
+          echo "DEBUG: current dir: $(pwd)"
+          echo "DEBUG: git remote before set-url:" && git remote -v || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"
+          echo "DEBUG: git remote after set-url:" && git remote -v || true
           # copy source files from the checked-out repo into this clone
           rsync -a --delete ../melsec_mc/ .
           BRANCH=sync/melsec_mc
+          echo "DEBUG: branches (local and remote):" && git branch -a || true
           # try to base the branch on origin if it exists, otherwise create new local branch
           if git show-ref --verify --quiet refs/remotes/origin/${BRANCH}; then
             git checkout -B ${BRANCH} origin/${BRANCH}
           else
             git checkout -B ${BRANCH}
           fi
+          echo "DEBUG: branch after checkout:" && git branch -vv || true
+          echo "DEBUG: git status (porcelain):" && git status --porcelain || true
+          echo "DEBUG: ls-remote origin for branch:" && git ls-remote origin ${BRANCH} || true
           if [ -n "$(git status --porcelain)" ]; then
             git add .
             git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
-            git push origin ${BRANCH} --force
+            echo "DEBUG: pushing to explicit PAT URL"
+            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           else
-            git push origin ${BRANCH} || true
+            echo "DEBUG: nothing to commit, ensure branch exists on remote"
+            git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
           fi
 

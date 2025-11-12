@@ -62,14 +62,16 @@ jobs:
             echo "DEBUG: clearing http extraheader and credential helper"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
-            echo "DEBUG: pushing to explicit PAT URL (with retries)"
-            for i in 1 2 3; do
+            echo "DEBUG: pushing to explicit PAT URL (with retries/backoff)"
+            # retry with linear backoff: attempts=5, sleep = i*8 seconds
+            for i in 1 2 3 4 5; do
               if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force; then
                 echo "push succeeded"
                 break
               else
                 echo "push failed, retrying ($i)"
-                sleep 2
+                # wait ~30 seconds between retries to reduce transient remote conflicts
+                sleep 30
               fi
             done
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
@@ -77,12 +79,15 @@ jobs:
             echo "DEBUG: nothing to commit, ensure branch exists on remote"
             git config --local --unset-all http.https://github.com/.extraheader || true
             git config --local --unset-all credential.helper || true
-            for i in 1 2 3; do
-              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} || true; then
+            # ensure we don't mask failures with '|| true' and use same backoff
+            for i in 1 2 3 4 5; do
+              if git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH}; then
+                echo "push (no-op) succeeded or branch exists"
                 break
               else
                 echo "push failed, retrying ($i)"
-                sleep 2
+                # wait ~30 seconds between retries
+                sleep 30
               fi
             done
             echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT

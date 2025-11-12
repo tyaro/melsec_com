@@ -172,8 +172,19 @@ if [ -n "$(git status --porcelain)" ]; then
         git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
       if [ ${PIPESTATUS[0]} -eq 0 ]; then
         echo "push succeeded" | tee -a "$PUSH_TRACE"
-        echo "DEBUG: about to call create_or_update_pr (post-push)" >> "$PUSH_TRACE"
-        create_or_update_pr || true
+        # Extra diagnostics before attempting PR creation
+        echo "DEBUG: about to call create_or_update_pr (post-push)" | tee -a "$PUSH_TRACE"
+        echo "DEBUG: gh exists: $(command -v gh || echo 'no')" | tee -a "$PUSH_TRACE"
+        if command -v gh >/dev/null 2>&1; then
+          gh --version 2>&1 | tee -a "$PUSH_TRACE" || true
+          gh auth status 2>&1 | tee -a "$PUSH_TRACE" || true
+        fi
+        if [ -n "${SYNC_PAT:-}" ]; then
+          echo "DEBUG: SYNC_PAT is set (length=${#SYNC_PAT})" >> "$PUSH_TRACE" 2>&1 || true
+        else
+          echo "DEBUG: SYNC_PAT is NOT set" | tee -a "$PUSH_TRACE"
+        fi
+        create_or_update_pr |& tee -a "$PUSH_TRACE" || true
         break
       else
         echo "push failed, retrying ($i)" | tee -a "$PUSH_TRACE"
@@ -196,7 +207,18 @@ else
       git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
     if [ ${PIPESTATUS[0]} -eq 0 ]; then
       echo "push (forced) succeeded or branch exists" | tee -a "$PUSH_TRACE"
-      create_or_update_pr || true
+      echo "DEBUG: about to call create_or_update_pr (branch-exists path)" | tee -a "$PUSH_TRACE"
+      echo "DEBUG: gh exists: $(command -v gh || echo 'no')" | tee -a "$PUSH_TRACE"
+      if command -v gh >/dev/null 2>&1; then
+        gh --version 2>&1 | tee -a "$PUSH_TRACE" || true
+        gh auth status 2>&1 | tee -a "$PUSH_TRACE" || true
+      fi
+      if [ -n "${SYNC_PAT:-}" ]; then
+        echo "DEBUG: SYNC_PAT is set (length=${#SYNC_PAT})" >> "$PUSH_TRACE" 2>&1 || true
+      else
+        echo "DEBUG: SYNC_PAT is NOT set" | tee -a "$PUSH_TRACE"
+      fi
+      create_or_update_pr |& tee -a "$PUSH_TRACE" || true
       break
     else
       echo "push failed, retrying ($i)" | tee -a "$PUSH_TRACE"

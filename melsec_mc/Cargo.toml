@@ -55,3 +55,8 @@ crate-type = ["cdylib", "rlib"]
 
 # Workspace moved to repository root Cargo.toml. Removed nested workspace declaration to
 # allow running `cargo` from the repository root (d:/develop/melsec_com).
+
+
+# 2) ユニットテスト (cfg(test)) のみで依存を有効にする場合
+[target.'cfg(test)'.dependencies]
+melsec_mc_mock = { path = "../melsec_mc_mock" }

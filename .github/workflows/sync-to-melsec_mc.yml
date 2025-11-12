@@ -39,6 +39,10 @@ jobs:
         working-directory: target
         run: |
           # working-directory is 'target' (the cloned tyaro/melsec_mc repo)
+          # ensure we always capture push traces even if git push fails
+          set -o pipefail
+          touch push-trace.log
+          echo "=== push-trace started: $(date -u) ===" >> push-trace.log
           echo "DEBUG: current dir: $(pwd)"
           echo "DEBUG: git remote before set-url:" && git remote -v || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"

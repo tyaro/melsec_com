@@ -1,8 +1,17 @@
 # Ignore workflow-generated artifacts and logs
 .github/artifacts/
+# Common trace/log names produced by sync scripts
 push-trace.log
+push-trace-*
 local-sync.log
 
-# Prevent accidental commits of large or sensitive logs
+# Prevent accidental commits of large or sensitive logs and backups
 *.log
 *.bak
+*.bak_*
+*.trace
+*.tmp
+
+# GitHub workflow specific
+.github/*.log
+.github/artifacts/**

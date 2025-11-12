@@ -34,10 +34,16 @@ jobs:
 
       - id: copy
         name: Copy melsec_mc files
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
-          rsync -a --delete melsec_mc/ target/
+          # enter the cloned target repo and ensure origin points to the target repo using the PAT
           cd target
+          git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"
+          # copy source files from the checked-out repo into this clone
+          rsync -a --delete ../melsec_mc/ .
           BRANCH=sync/melsec_mc
+          # try to base the branch on origin if it exists, otherwise create new local branch
           if git show-ref --verify --quiet refs/remotes/origin/${BRANCH}; then
             git checkout -B ${BRANCH} origin/${BRANCH}
           else

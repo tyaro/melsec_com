@@ -14,6 +14,8 @@ jobs:
       contents: write
     env:
       SYNC_PAT: ${{ secrets.SYNC_PAT }}
+      # default to dry-run for non-main branches when run elsewhere; main executes real sync
+      DRY_RUN: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
     steps:
       - name: Checkout source repo
         uses: actions/checkout@v4
@@ -21,126 +23,27 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Prepare
+      - name: Run sync script (respects DRY_RUN)
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          chmod +x ./.github/scripts/sync-run.sh
+          echo "DRY_RUN=$DRY_RUN"
+          DRY_RUN=${DRY_RUN} ./.github/scripts/sync-run.sh || true
 
-      - name: Clone target repo
-        if: ${{ env.SYNC_PAT != '' }}
-        run: |
-          if [ -z "${SYNC_PAT}" ]; then
-            echo "ERROR: secret SYNC_PAT is not set. Please add a Personal Access Token with repo access to repository secrets."
-            exit 1
-          fi
-          git clone "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" target
-          git -C target fetch origin --prune
-
-      - id: copy
-        name: Copy melsec_mc files
-        if: ${{ env.SYNC_PAT != '' }}
-        working-directory: target
-        run: |
-          set -o pipefail
-          TMP_DIR="${RUNNER_TEMP:-/tmp}"
-          mkdir -p "$TMP_DIR"
-          PUSH_TRACE="$(mktemp "$TMP_DIR/push-trace-XXXXXX.log")"
-          chmod 600 "$PUSH_TRACE" || true
-          echo "PUSH_TRACE=$PUSH_TRACE" >> $GITHUB_ENV
-          echo "=== push-trace started: $(date -u) ===" >> "$PUSH_TRACE"
-          git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git"
-          echo "DEBUG: ensure source checkout is unshallowed if needed" >> "$PUSH_TRACE"
-          if git -C .. rev-parse --is-shallow-repository >/dev/null 2>&1; then
-            IS_SHALLOW=$(git -C .. rev-parse --is-shallow-repository)
-            if [ "$IS_SHALLOW" = "true" ]; then
-              git -C .. fetch --prune --unshallow || true
-            fi
-          fi
-          rsync -a --delete --exclude='.github/artifacts' --exclude='*.log' --exclude='*.bak' ../melsec_mc/ .
-          BRANCH=sync/melsec_mc
-          git fetch origin main || true
-          if git show-ref --verify --quiet refs/remotes/origin/main; then
-            git checkout -B ${BRANCH} origin/main
-          else
-            git checkout -B ${BRANCH}
-          fi
-          UNTRACKED=$(git ls-files --others --exclude-standard || true)
-          if [ -n "$UNTRACKED" ]; then
-            echo "$UNTRACKED" >> "$PUSH_TRACE"
-            echo "$UNTRACKED" | grep -E '\.github/artifacts|\.bak|push-trace' >/dev/null 2>&1
-            if [ $? -eq 0 ]; then
-              echo "ERROR: dangerous untracked files would be committed. Aborting." | tee -a "$PUSH_TRACE"
-              exit 1
-            fi
-          fi
-          if [ -n "$(git status --porcelain)" ]; then
-            git add .
-            git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
-            git config --local --unset-all http.https://github.com/.extraheader || true
-            git config --local --unset-all credential.helper || true
-            for i in 1 2 3 4 5; do
-              GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
-                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                break
-              else
-                sleep 30
-              fi
-            done
-            echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
-          else
-            for i in 1 2 3 4 5; do
-              GIT_TRACE=1 GIT_TRACE_PACKET=1 GIT_CURL_VERBOSE=1 \
-                git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" ${BRANCH} --force-with-lease 2>&1 | tee -a "$PUSH_TRACE"
-              if [ ${PIPESTATUS[0]} -eq 0 ]; then
-                break
-              else
-                sleep 30
-              fi
-            done
-            echo "PUSHED_BRANCH=${BRANCH}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create or update PR
-        if: ${{ env.SYNC_PAT != '' && steps.copy.outputs.PUSHED_BRANCH != '' }}
-        env:
-          PUSHED_BRANCH: ${{ steps.copy.outputs.PUSHED_BRANCH }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          chmod +x ./.github/scripts/sync-create-pr.sh
-          ./.github/scripts/sync-create-pr.sh
-
-      - name: Ensure push trace exists
-        if: ${{ env.SYNC_PAT != '' }}
-        run: |
-          TMP_DIR="${RUNNER_TEMP:-/tmp}"
-          mkdir -p "$TMP_DIR"
-          if [ -n "${PUSH_TRACE:-}" ]; then
-            echo "push trace already set: $PUSH_TRACE"
-          else
-            PUSH_TRACE="$(mktemp "$TMP_DIR/push-trace-XXXXXX.log")"
-            chmod 600 "$PUSH_TRACE" || true
-            echo "PUSH_TRACE=$PUSH_TRACE" >> $GITHUB_ENV
-            echo "no push trace generated" > "$PUSH_TRACE"
-          fi
-
-      - name: Prepare push trace for upload
-        if: ${{ env.SYNC_PAT != '' }}
+      - name: Copy push trace for upload
         run: |
           if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
             cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+            ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
           else
             echo "No push trace file to upload"
           fi
 
       - name: Upload push trace artifact
-        if: ${{ env.SYNC_PAT != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: push-trace
           path: push-trace-runtime.log
           if-no-files-found: warn
-          compression-level: 6
 name: Sync melsec_mc to tyaro/melsec_mc
 
 on:
@@ -152,14 +55,58 @@ on:
 jobs:
   sync:
     name: Sync melsec_mc
-    runs-on: ubuntu-latest
     permissions:
-      contents: write
-    env:
-      SYNC_PAT: ${{ secrets.SYNC_PAT }}
-    steps:
+    on:
+      push:
+        branches: [ main ]
+        paths:
+          - 'melsec_mc/**'
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        name: Sync melsec_mc to tyaro/melsec_mc
+
+        on:
+          push:
+            branches: [ main ]
+            paths:
+              - 'melsec_mc/**'
+
+        jobs:
+          sync:
+            name: Sync melsec_mc
+            runs-on: ubuntu-latest
+            permissions:
+              contents: write
+            env:
+              SYNC_PAT: ${{ secrets.SYNC_PAT }}
+              DRY_RUN: ${{ github.ref == 'refs/heads/main' && '0' || '1' }}
+            steps:
+              - name: Checkout source repo
+                uses: actions/checkout@v4
+                with:
+                  fetch-depth: 0
+                  persist-credentials: false
+
+              - name: Run sync script (respects DRY_RUN)
+                run: |
+                  chmod +x ./.github/scripts/sync-run.sh
+                  echo "DRY_RUN=$DRY_RUN"
+                  DRY_RUN=${DRY_RUN} ./.github/scripts/sync-run.sh || true
+
+              - name: Copy push trace for upload
+                run: |
+                  if [ -n "${PUSH_TRACE:-}" ] && [ -f "${PUSH_TRACE}" ]; then
+                    cp "${PUSH_TRACE}" "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+                    ls -l "$GITHUB_WORKSPACE/push-trace-runtime.log" || true
+                  else
+                    echo "No push trace file to upload"
+                  fi
+
+              - name: Upload push trace artifact
+                uses: actions/upload-artifact@v4
+                with:
+                  name: push-trace
+                  path: push-trace-runtime.log
+                  if-no-files-found: warn
         with:
           fetch-depth: 0
           persist-credentials: false

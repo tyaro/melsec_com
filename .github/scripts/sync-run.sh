@@ -36,7 +36,6 @@ create_or_update_pr() {
     echo "DRY_RUN=1: skipping PR create/update" | tee -a "$PUSH_TRACE"
     return
   fi
-
   OWNER="tyaro"
   REPO="melsec_mc"
   HEAD_BRANCH="${BRANCH}"
@@ -46,46 +45,71 @@ create_or_update_pr() {
 
   echo "Checking for existing PR (head=${OWNER}:${HEAD_BRANCH}, base=${BASE})" | tee -a "$PUSH_TRACE"
 
-  if command -v jq >/dev/null 2>&1; then
-    existing_pr_json=$(curl -sS -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-      "https://api.github.com/repos/${OWNER}/${REPO}/pulls?head=${OWNER}:${HEAD_BRANCH}&base=${BASE}&state=open" 2>&1 | tee -a "$PUSH_TRACE" ) || true
-    existing_pr=$(echo "$existing_pr_json" | jq -r '.[0].number // empty' || true)
-  else
-    existing_pr_json=$(curl -sS -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-      "https://api.github.com/repos/${OWNER}/${REPO}/pulls?head=${OWNER}:${HEAD_BRANCH}&base=${BASE}&state=open" 2>&1 | tee -a "$PUSH_TRACE" ) || true
-    existing_pr=$(echo "$existing_pr_json" | grep -o '"number": [0-9]*' | head -1 | grep -o '[0-9]*' || true)
-  fi
+  # Prefer gh CLI if available
+  if command -v gh >/dev/null 2>&1; then
+    echo "Using gh CLI for PR operations" | tee -a "$PUSH_TRACE"
+    # authenticate gh with SYNC_PAT (non-interactive)
+    echo "$SYNC_PAT" | gh auth login --with-token 2>&1 | tee -a "$PUSH_TRACE" || true
 
-  if [ -n "$existing_pr" ]; then
-    echo "Found existing PR #$existing_pr — updating title/body" | tee -a "$PUSH_TRACE"
-    if command -v jq >/dev/null 2>&1; then
-      curl -sS -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${existing_pr}" \
-        -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b}')" 2>&1 | tee -a "$PUSH_TRACE" || true
+    existing_pr=$(gh pr list --repo ${OWNER}/${REPO} --head ${OWNER}:${HEAD_BRANCH} --base ${BASE} --state open --json number,url -q '.[0].number' 2>/dev/null || true)
+    if [ -n "$existing_pr" ]; then
+      echo "Found existing PR #${existing_pr} via gh — editing" | tee -a "$PUSH_TRACE"
+      gh pr edit ${existing_pr} --repo ${OWNER}/${REPO} --title "$TITLE" --body "$BODY" 2>&1 | tee -a "$PUSH_TRACE" || true
+      pr_url=$(gh pr view ${existing_pr} --repo ${OWNER}/${REPO} --json url -q '.url' 2>/dev/null || true)
+      echo "PR_NUMBER=${existing_pr}" >> "$GITHUB_OUTPUT" || true
+      [ -n "$pr_url" ] && echo "PR_URL=${pr_url}" >> "$GITHUB_OUTPUT" || true
     else
-      curl -sS -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${existing_pr}" \
-        -d "{\"title\": \"${TITLE}\", \"body\": \"${BODY}\"}" 2>&1 | tee -a "$PUSH_TRACE" || true
+      echo "No existing PR found via gh — creating" | tee -a "$PUSH_TRACE"
+      pr_url=$(gh pr create --repo ${OWNER}/${REPO} --title "$TITLE" --body "$BODY" --base ${BASE} --head ${OWNER}:${HEAD_BRANCH} --json url,number 2>&1 | tee -a "$PUSH_TRACE" | jq -r '.url') || true
+      pr_num=$(gh pr list --repo ${OWNER}/${REPO} --head ${OWNER}:${HEAD_BRANCH} --state open --json number -q '.[0].number' 2>/dev/null || true)
+      [ -n "$pr_url" ] && echo "PR_URL=${pr_url}" >> "$GITHUB_OUTPUT" || true
+      [ -n "$pr_num" ] && echo "PR_NUMBER=${pr_num}" >> "$GITHUB_OUTPUT" || true
+      echo "Created PR: ${pr_url} (#${pr_num})" | tee -a "$PUSH_TRACE"
     fi
-    echo "PR_NUMBER=${existing_pr}" >> "$GITHUB_OUTPUT" || true
   else
-    echo "No existing PR — creating new PR ${HEAD_BRANCH} -> ${BASE}" | tee -a "$PUSH_TRACE"
+    # Fallback to manual GitHub API via curl (existing behavior)
+    echo "gh not available; falling back to curl API" | tee -a "$PUSH_TRACE"
     if command -v jq >/dev/null 2>&1; then
-      pr_json=$(curl -sS -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
-        -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" --arg head "${OWNER}:${HEAD_BRANCH}" --arg base "$BASE" '{title:$t, body:$b, head:$head, base:$base}')" 2>&1 | tee -a "$PUSH_TRACE" ) || true
-      pr_url=$(echo "$pr_json" | jq -r '.html_url // empty' || true)
-      pr_num=$(echo "$pr_json" | jq -r '.number // empty' || true)
+      existing_pr_json=$(curl -sS -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${OWNER}/${REPO}/pulls?head=${OWNER}:${HEAD_BRANCH}&base=${BASE}&state=open" 2>&1 | tee -a "$PUSH_TRACE" ) || true
+      existing_pr=$(echo "$existing_pr_json" | jq -r '.[0].number // empty' || true)
     else
-      pr_json=$(curl -sS -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
-        -d "{\"title\": \"${TITLE}\", \"body\": \"${BODY}\", \"head\": \"${OWNER}:${HEAD_BRANCH}\", \"base\": \"${BASE}\"}" 2>&1 | tee -a "$PUSH_TRACE" ) || true
-      pr_url=$(echo "$pr_json" | grep -o '"html_url": *"[^"]*"' | head -1 | sed -E 's/"html_url": *"([^"]*)"/\1/' || true)
-      pr_num=$(echo "$pr_json" | grep -o '"number": *[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+      existing_pr_json=$(curl -sS -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/${OWNER}/${REPO}/pulls?head=${OWNER}:${HEAD_BRANCH}&base=${BASE}&state=open" 2>&1 | tee -a "$PUSH_TRACE" ) || true
+      existing_pr=$(echo "$existing_pr_json" | grep -o '"number": [0-9]*' | head -1 | grep -o '[0-9]*' || true)
     fi
-    echo "Created PR #${pr_num}: ${pr_url}" | tee -a "$PUSH_TRACE"
-    [ -n "$pr_url" ] && echo "PR_URL=${pr_url}" >> "$GITHUB_OUTPUT" || true
-    [ -n "$pr_num" ] && echo "PR_NUMBER=${pr_num}" >> "$GITHUB_OUTPUT" || true
+
+    if [ -n "$existing_pr" ]; then
+      echo "Found existing PR #$existing_pr — updating title/body" | tee -a "$PUSH_TRACE"
+      if command -v jq >/dev/null 2>&1; then
+        curl -sS -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${existing_pr}" \
+          -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b}')" 2>&1 | tee -a "$PUSH_TRACE" || true
+      else
+        curl -sS -X PATCH -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/pulls/${existing_pr}" \
+          -d "{\"title\": \"${TITLE}\", \"body\": \"${BODY}\"}" 2>&1 | tee -a "$PUSH_TRACE" || true
+      fi
+      echo "PR_NUMBER=${existing_pr}" >> "$GITHUB_OUTPUT" || true
+    else
+      echo "No existing PR — creating new PR ${HEAD_BRANCH} -> ${BASE}" | tee -a "$PUSH_TRACE"
+      if command -v jq >/dev/null 2>&1; then
+        pr_json=$(curl -sS -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
+          -d "$(jq -n --arg t "$TITLE" --arg b "$BODY" --arg head "${OWNER}:${HEAD_BRANCH}" --arg base "$BASE" '{title:$t, body:$b, head:$head, base:$base}')" 2>&1 | tee -a "$PUSH_TRACE" ) || true
+        pr_url=$(echo "$pr_json" | jq -r '.html_url // empty' || true)
+        pr_num=$(echo "$pr_json" | jq -r '.number // empty' || true)
+      else
+        pr_json=$(curl -sS -X POST -H "Authorization: token ${SYNC_PAT}" -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${OWNER}/${REPO}/pulls" \
+          -d "{\"title\": \"${TITLE}\", \"body\": \"${BODY}\", \"head\": \"${OWNER}:${HEAD_BRANCH}\", \"base\": \"${BASE}\"}" 2>&1 | tee -a "$PUSH_TRACE" ) || true
+        pr_url=$(echo "$pr_json" | grep -o '"html_url": *"[^"]*"' | head -1 | sed -E 's/"html_url": *"([^"]*)"/\1/' || true)
+        pr_num=$(echo "$pr_json" | grep -o '"number": *[0-9]*' | head -1 | grep -o '[0-9]*' || true)
+      fi
+      echo "Created PR #${pr_num}: ${pr_url}" | tee -a "$PUSH_TRACE"
+      [ -n "$pr_url" ] && echo "PR_URL=${pr_url}" >> "$GITHUB_OUTPUT" || true
+      [ -n "$pr_num" ] && echo "PR_NUMBER=${pr_num}" >> "$GITHUB_OUTPUT" || true
+    fi
   fi
 }
 

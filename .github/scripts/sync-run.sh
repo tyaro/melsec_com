@@ -142,7 +142,11 @@ else
   git checkout -B ${BRANCH}
 fi
 
+echo "DEBUG: running git status (porcelain) and listing changed files" >> "$PUSH_TRACE"
+git status --porcelain >> "$PUSH_TRACE" 2>&1 || true
+git diff --name-only origin/main...HEAD >> "$PUSH_TRACE" 2>&1 || true
 UNTRACKED=$(git ls-files --others --exclude-standard || true)
+echo "DEBUG: UNTRACKED=[$UNTRACKED]" >> "$PUSH_TRACE"
 if [ -n "$UNTRACKED" ]; then
   echo "$UNTRACKED" >> "$PUSH_TRACE"
   echo "$UNTRACKED" | grep -E '\.github/artifacts|\.bak|push-trace' >/dev/null 2>&1 && {
@@ -152,6 +156,7 @@ if [ -n "$UNTRACKED" ]; then
 fi
 
 if [ -n "$(git status --porcelain)" ]; then
+  echo "DEBUG: detected changes to commit" >> "$PUSH_TRACE"
   git add .
   git commit -m "sync: update melsec_mc from tyaro/melsec_com ${GITHUB_SHA}"
   git config --local --unset-all http.https://github.com/.extraheader || true
@@ -182,6 +187,7 @@ if [ -n "$(git status --porcelain)" ]; then
     echo "PUSHED_BRANCH=${BRANCH}" >> "$GITHUB_OUTPUT"
   fi
 else
+  echo "DEBUG: no changes to commit path taken" >> "$PUSH_TRACE"
   # nothing to commit, just ensure branch exists on remote
   git config --local --unset-all http.https://github.com/.extraheader || true
   git config --local --unset-all credential.helper || true

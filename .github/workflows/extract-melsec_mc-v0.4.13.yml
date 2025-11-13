@@ -23,25 +23,26 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install git-filter-repo
 
-      - name: Create working clone for filter (fetch tags from origin)
+      - name: Prepare workspace for filter (use checked-out workspace)
         run: |
           set -euo pipefail
           TMPDIR=$(mktemp -d)
           echo "workdir=$TMPDIR" > workdir.env
-          # clone directly from remote so tags are available; use GITHUB_TOKEN for auth
-          REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
-          git clone --no-hardlinks --dissociate --no-single-branch "$REPO_URL" "$TMPDIR/repo"
-          cd "$TMPDIR/repo"
-          # ensure tags are present
-          git fetch --tags origin || true
-          echo "Available tags:"; git tag -l | sed -n '1,50p' || true
-          # create branch at tag v0.4.13 if available
-          if git rev-parse --verify refs/tags/v0.4.13 >/dev/null 2>&1; then
-            git checkout -b extract-v0.4.13 v0.4.13
+          # ensure full history and tags are present in the checked-out workspace
+          git -C "$GITHUB_WORKSPACE" fetch --prune --unshallow || true
+          git -C "$GITHUB_WORKSPACE" fetch --tags origin || true
+          echo "Available tags:"; git -C "$GITHUB_WORKSPACE" tag -l | sed -n '1,50p' || true
+          # create a branch at tag v0.4.13 in the workspace
+          if git -C "$GITHUB_WORKSPACE" rev-parse --verify refs/tags/v0.4.13 >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" checkout -b extract-v0.4.13 v0.4.13
           else
             echo "Tag v0.4.13 not found in repository" >&2
             exit 2
           fi
+          # copy workspace to a separate dir to run git-filter-repo (avoid mutating runner workspace)
+          git -C "$GITHUB_WORKSPACE" repack -ad || true
+          git clone --no-hardlinks --dissociate "$GITHUB_WORKSPACE" "$TMPDIR/repo"
+          cd "$TMPDIR/repo"
           git branch --show-current
 
       - name: Run git-filter-repo to extract melsec_mc
@@ -50,7 +51,7 @@ jobs:
           TMPDIR=$(cat workdir.env | sed -n 's/^workdir=//p')
           cd "$TMPDIR/repo"
           # rewrite history keeping only the path 'melsec_mc' and move it to root
-          python3 -m git_filter_repo --force --refs refs/heads/extract-v0.4.13 --path melsec_mc --path-rename melsec_mc/: 
+          python3 -m git_filter_repo --force --refs refs/heads/extract-v0.4.13 --path melsec_mc --path-rename melsec_mc/:
           echo "Filter exit: $?"
 
       - name: Pack filtered repo and upload

@@ -64,15 +64,16 @@ jobs:
           # create a tarball of the filtered repository (including .git)
           OUT="${GITHUB_RUN_ID:-run}_melsec_mc_v0.4.13.tar.gz"
           tar -czf "$OUT" .
-          echo "artifact=$OUT" > artifact.env
+          # move artifact to workspace so upload-artifact can find it reliably
+          mv "$OUT" "$GITHUB_WORKSPACE/"
+          echo "artifact=$GITHUB_WORKSPACE/$OUT" > "$GITHUB_WORKSPACE/artifact.env" || true
 
       - name: Upload extracted artifact
         uses: actions/upload-artifact@v4
         with:
           name: melsec_mc-v0.4.13-repo
           path: |
-            ${{ steps.extract.outputs.artifact }}
-            $(cat artifact.env | sed -n 's/^artifact=//p')
+            ${{ github.workspace }}/*melsec_mc_v0.4.13.tar.gz
 
       - name: Show guidance
         run: |

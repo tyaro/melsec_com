@@ -1,0 +1,60 @@
+name: Force replace melsec_mc/main
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "FORCE" to confirm destructive overwrite of tyaro/melsec_mc main'
+        required: true
+
+jobs:
+  force-replace:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "FORCE" ]; then
+            echo "Confirmation not provided. To run, set input 'confirm' to FORCE." && exit 1
+          fi
+
+      - name: Prepare git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone target repo (uses SYNC_PAT secret)
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        run: |
+          if [ -z "${SYNC_PAT}" ]; then
+            echo "ERROR: SYNC_PAT secret is not set." && exit 1
+          fi
+          git clone "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" target
+          cd target
+          git fetch origin --prune
+
+      - name: Replace files and force-push main
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        run: |
+          rsync -a --delete ../melsec_mc/ target/
+          cd target
+          # create main branch based on current remote/main if present
+          git checkout -B main origin/main || git checkout -B main
+          # stage changes
+          git add --all
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -m "force: replace main with melsec_mc from ${GITHUB_REPOSITORY}@${GITHUB_SHA::7}" || true
+          else
+            echo "No changes to commit; will still attempt force-push to ensure state." 
+          fi
+          # force push to main
+          git push "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" main --force

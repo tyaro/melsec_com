@@ -23,13 +23,18 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install git-filter-repo
 
-      - name: Create working clone for filter
+      - name: Create working clone for filter (fetch tags from origin)
         run: |
           set -euo pipefail
           TMPDIR=$(mktemp -d)
           echo "workdir=$TMPDIR" > workdir.env
-          git clone --no-local --no-hardlinks --dissociate "$GITHUB_WORKSPACE" "$TMPDIR/repo"
+          # clone directly from remote so tags are available; use GITHUB_TOKEN for auth
+          REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+          git clone --no-hardlinks --dissociate --no-single-branch "$REPO_URL" "$TMPDIR/repo"
           cd "$TMPDIR/repo"
+          # ensure tags are present
+          git fetch --tags origin || true
+          echo "Available tags:"; git tag -l | sed -n '1,50p' || true
           # create branch at tag v0.4.13 if available
           if git rev-parse --verify refs/tags/v0.4.13 >/dev/null 2>&1; then
             git checkout -b extract-v0.4.13 v0.4.13

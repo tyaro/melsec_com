@@ -1,0 +1,74 @@
+name: Extract melsec_mc v0.4.13 (history-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    name: Extract melsec_mc@v0.4.13
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure Python and pip
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y python3 python3-pip git
+
+      - name: Install git-filter-repo
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install git-filter-repo
+
+      - name: Create working clone for filter
+        run: |
+          set -euo pipefail
+          TMPDIR=$(mktemp -d)
+          echo "workdir=$TMPDIR" > workdir.env
+          git clone --no-local --no-hardlinks --dissociate "$GITHUB_WORKSPACE" "$TMPDIR/repo"
+          cd "$TMPDIR/repo"
+          # create branch at tag v0.4.13 if available
+          if git rev-parse --verify refs/tags/v0.4.13 >/dev/null 2>&1; then
+            git checkout -b extract-v0.4.13 v0.4.13
+          else
+            echo "Tag v0.4.13 not found in repository" >&2
+            exit 2
+          fi
+          git branch --show-current
+
+      - name: Run git-filter-repo to extract melsec_mc
+        run: |
+          set -euo pipefail
+          TMPDIR=$(cat workdir.env | sed -n 's/^workdir=//p')
+          cd "$TMPDIR/repo"
+          # rewrite history keeping only the path 'melsec_mc' and move it to root
+          python3 -m git_filter_repo --force --refs refs/heads/extract-v0.4.13 --path melsec_mc --path-rename melsec_mc/: 
+          echo "Filter exit: $?"
+
+      - name: Pack filtered repo and upload
+        run: |
+          set -euo pipefail
+          TMPDIR=$(cat workdir.env | sed -n 's/^workdir=//p')
+          cd "$TMPDIR/repo"
+          # ensure .git exists and show recent commits
+          git --no-pager log --oneline -n 10 || true
+          # create a tarball of the filtered repository (including .git)
+          OUT="${GITHUB_RUN_ID:-run}_melsec_mc_v0.4.13.tar.gz"
+          tar -czf "$OUT" .
+          echo "artifact=$OUT" > artifact.env
+
+      - name: Upload extracted artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: melsec_mc-v0.4.13-repo
+          path: |
+            ${{ steps.extract.outputs.artifact }}
+            $(cat artifact.env | sed -n 's/^artifact=//p')
+
+      - name: Show guidance
+        run: |
+          echo "The artifact 'melsec_mc-v0.4.13-repo' contains the filtered repository tarball."
+          echo "Download and inspect it locally. If acceptable, you can replace the target repo or unpack it and push to a new remote."

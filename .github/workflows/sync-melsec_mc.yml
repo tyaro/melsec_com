@@ -39,7 +39,8 @@ jobs:
       - id: copy
         name: Copy melsec_mc files
         run: |
-          rsync -a --delete ../melsec_mc/ target/
+          # copy from repository root melsec_mc/ into target/
+          rsync -a --delete melsec_mc/ target/
           cd target
           BRANCH=sync/melsec_mc
           # try to base the branch on origin if it exists, otherwise create new local branch

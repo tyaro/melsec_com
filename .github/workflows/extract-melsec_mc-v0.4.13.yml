@@ -59,11 +59,28 @@ jobs:
           set -euo pipefail
           TMPDIR=$(cat workdir.env | sed -n 's/^workdir=//p')
           cd "$TMPDIR/repo"
-          # ensure .git exists and show recent commits
+          # ensure filtered refs are present and show recent commits
+          # try to force-checkout the filtered branch so work tree is consistent
+          git fetch --all || true
+          if git rev-parse --verify refs/heads/extract-v0.4.13 >/dev/null 2>&1; then
+            git checkout --force extract-v0.4.13 || git checkout --detach $(git rev-parse --verify refs/heads/extract-v0.4.13)
+          else
+            # if branch missing, try to detach to the tag's commit
+            git checkout --detach || true
+          fi
           git --no-pager log --oneline -n 10 || true
-          # create a tarball of the filtered repository (including .git)
+          git repack -ad || true
+
+          # create a stable copy of the filtered repo and tar that copy to avoid "file changed as we read it"
+          OUTDIR="$TMPDIR/out"
+          rm -rf "$OUTDIR"
+          mkdir -p "$OUTDIR"
+          git clone --no-hardlinks --dissociate . "$OUTDIR/repo_copy"
+          cd "$OUTDIR/repo_copy"
+
           OUT="${GITHUB_RUN_ID:-run}_melsec_mc_v0.4.13.tar.gz"
           tar -czf "$OUT" .
+
           # move artifact to workspace so upload-artifact can find it reliably
           mv "$OUT" "$GITHUB_WORKSPACE/"
           echo "artifact=$GITHUB_WORKSPACE/$OUT" > "$GITHUB_WORKSPACE/artifact.env" || true

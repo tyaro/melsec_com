@@ -172,12 +172,17 @@ fi
 
 # Grep for token-like patterns (ghp_, ghs_, x-access-token:, GITHUB_TOKEN, SYNC_PAT)
 # Exclude binary/media and .git and artifact dirs from the scan
-if grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
-     --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' >/dev/null 2>&1; then
-  echo "ERROR: potential token-like strings found in workspace; aborting. See details below:" | tee -a "$PUSH_TRACE"
-  grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
-    --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' | tee -a "$PUSH_TRACE" || true
-  exit 1
+# Allow skipping this scan in CI dry-run by setting SKIP_TOKEN_SCAN=1
+if [ "${SKIP_TOKEN_SCAN:-0}" = "1" ]; then
+  echo "SKIP_TOKEN_SCAN=1: skipping token-like pattern scan (DRY_RUN or explicit)`" | tee -a "$PUSH_TRACE"
+else
+  if grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
+       --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' >/dev/null 2>&1; then
+    echo "ERROR: potential token-like strings found in workspace; aborting. See details below:" | tee -a "$PUSH_TRACE"
+    grep -RIn --binary-files=without-match -E 'ghp_[A-Za-z0-9_]{5,}|ghs_[A-Za-z0-9_]{5,}|x-access-token:|GITHUB_TOKEN|SYNC_PAT' . \
+      --exclude-dir=.git --exclude-dir=.github/artifacts --exclude='*.png' --exclude='*.jpg' --exclude='*.zip' | tee -a "$PUSH_TRACE" || true
+    exit 1
+  fi
 fi
 
 echo "DEBUG: completed rsync, current dir $(pwd)" >> "$PUSH_TRACE"

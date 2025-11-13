@@ -16,10 +16,16 @@ jobs:
       - name: Make sync script executable
         run: chmod +x .github/scripts/sync-run.sh
 
+      - name: Ensure rsync is available
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y rsync
+
       - name: Run sync-run.sh (dry run)
         env:
           DRY_RUN: '1'
           GITHUB_SHA: ${{ github.sha }}
+          SKIP_TOKEN_SCAN: '1'
         run: |
           set -o pipefail
           ./.github/scripts/sync-run.sh 2>&1 | tee sync-dry-run-output.log

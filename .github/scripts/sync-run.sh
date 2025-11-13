@@ -131,13 +131,34 @@ if git -C .. rev-parse --is-shallow-repository >/dev/null 2>&1; then
   fi
 fi
 
-# sync files (exclude artifact directories and known trace files)
-rsync -a --delete \
+# Ensure target worktree contains only the crate files we want to publish.
+# We remove everything except the .git directory, then mirror the contents of
+# ../melsec_mc/ into the target working tree. This avoids accidentally
+# propagating other workspace files.
+echo "DEBUG: cleaning target worktree (preserve .git)" | tee -a "$PUSH_TRACE"
+if [ "${DRY_RUN}" = "1" ]; then
+  echo "DRY_RUN=1: would remove all files in target except .git" | tee -a "$PUSH_TRACE"
+else
+  # remove all top-level entries except .git
+  find . -mindepth 1 -maxdepth 1 -not -name '.git' -exec rm -rf {} +
+fi
+
+# Mirror only the melsec_mc subdirectory into the target repo, excluding
+# known artifact patterns. Use rsync --delete so removed files are removed
+# in the target as well.
+RSYNC_OPTS=( -a --delete \
   --exclude='.github/artifacts/**' \
   --exclude='**/push-trace*' \
   --exclude='*.log' \
-  --exclude='*.bak' ../melsec_mc/ .
-echo "DEBUG: completed rsync, current dir $(pwd)" >> "$PUSH_TRACE"
+  --exclude='*.bak' )
+
+if [ "${DRY_RUN}" = "1" ]; then
+  echo "DRY_RUN=1: rsync --dry-run from ../melsec_mc/ to target" | tee -a "$PUSH_TRACE"
+  rsync --dry-run "${RSYNC_OPTS[@]}" ../melsec_mc/ . | tee -a "$PUSH_TRACE" || true
+else
+  rsync "${RSYNC_OPTS[@]}" ../melsec_mc/ .
+  echo "DEBUG: completed rsync (mirrored ../melsec_mc/ -> target), current dir $(pwd)" >> "$PUSH_TRACE"
+fi
 
 # Safety scan: ensure we don't commit push-trace backups or token-like strings
 echo "DEBUG: scanning workspace for push-trace files or token-like strings" | tee -a "$PUSH_TRACE"

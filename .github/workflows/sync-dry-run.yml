@@ -1,0 +1,38 @@
+name: Sync dry-run
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    name: Dry-run sync-run.sh (DRY_RUN=1)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Make sync script executable
+        run: chmod +x .github/scripts/sync-run.sh
+
+      - name: Run sync-run.sh (dry run)
+        env:
+          DRY_RUN: '1'
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -o pipefail
+          ./.github/scripts/sync-run.sh 2>&1 | tee sync-dry-run-output.log
+
+      - name: Upload dry-run output
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-dry-run-output
+          path: |
+            sync-dry-run-output.log
+            **/push-trace*.log
+            ${{ runner.temp }}/push-trace-*.log
+            target/**/push-trace*.log
+
+      - name: List workspace (for debugging)
+        run: ls -la

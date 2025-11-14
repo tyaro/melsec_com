@@ -69,8 +69,6 @@ jobs:
           rm -rf .github/artifacts || true
           find . -type f -name 'push-trace.log*' -exec rm -f {} + || true
 
-          # create main branch based on current remote/main if present
-          git checkout -B main origin/main || git checkout -B main
           # stage changes
           git add --all
           if [ -n "$(git status --porcelain)" ]; then

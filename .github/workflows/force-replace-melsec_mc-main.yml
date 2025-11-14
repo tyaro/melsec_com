@@ -30,6 +30,9 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Ensure consistent line endings in the runner and prevent automatic CRLF<->LF conversion
+          git config --global core.eol lf
+          git config --global core.autocrlf false
 
       - name: Clone target repo (uses SYNC_PAT secret)
         env:
@@ -41,6 +44,9 @@ jobs:
           git clone "https://x-access-token:${SYNC_PAT}@github.com/tyaro/melsec_mc.git" target
           cd target
           git fetch origin --prune
+          # Prefer LF and disable autocrlf in the cloned repo to avoid unintended conversion
+          git config core.eol lf
+          git config core.autocrlf false
 
       - name: Wipe target root (preserve .git)
         run: |

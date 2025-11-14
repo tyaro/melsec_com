@@ -61,7 +61,7 @@ jobs:
             --exclude='.github/workflows' \
             --exclude='.github/artifacts' \
             --exclude='*.bak' \
-            melsec_mc/ target/
+            melsec_mc/. target/
           cd target
           # remove known artifact files that may contain secrets (avoid Push Protection)
           rm -rf .github/artifacts || true

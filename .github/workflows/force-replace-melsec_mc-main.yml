@@ -58,12 +58,9 @@ jobs:
           # copy from repository root melsec_mc/ into target/
           # exclude workflow files and artifact backups so target repo doesn't run copied workflows
           # copy contents from the melsec_mc directory into target root
+          # Use tar to copy contents of melsec_mc into target root (more atomic and predictable)
           cd melsec_mc
-          rsync -a --delete \
-            --exclude='.github/workflows' \
-            --exclude='.github/artifacts' \
-            --exclude='*.bak' \
-            ./ ../target/
+          tar --exclude='.github/workflows' --exclude='.github/artifacts' --exclude='*.bak' -cf - . | (cd ../target && tar -xf -)
           cd ../target
           # remove known artifact files that may contain secrets (avoid Push Protection)
           rm -rf .github/artifacts || true

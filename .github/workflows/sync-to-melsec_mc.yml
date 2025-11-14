@@ -29,6 +29,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Prepare git (EOL settings)
+        run: |
+          # Ensure consistent EOL handling in the runner to avoid CRLF/LF noise
+          git config --global core.eol lf
+          git config --global core.autocrlf false
+
       - name: Run sync script (respects DRY_RUN)
         run: |
           chmod +x ./.github/scripts/sync-run.sh

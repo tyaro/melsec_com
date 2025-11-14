@@ -49,6 +49,10 @@ jobs:
           # copy from repository root melsec_mc/ into target/
           rsync -a --delete melsec_mc/ target/
           cd target
+          # remove known artifact files that may contain secrets (avoid Push Protection)
+          rm -rf .github/artifacts || true
+          find . -type f -name 'push-trace.log*' -exec rm -f {} + || true
+
           # create main branch based on current remote/main if present
           git checkout -B main origin/main || git checkout -B main
           # stage changes

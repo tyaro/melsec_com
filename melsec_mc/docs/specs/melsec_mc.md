@@ -2,16 +2,19 @@
 
 このドキュメントはリポジトリの現行実装に基づき、`melsec_mc` クレートの公開 API と主要型の契約（入力/出力/エラー）をまとめたものです。
 
-概要
+## 概要
+
 - `melsec_mc` は Mitsubishi PLC の MC プロトコル（MC3E/MC4E 相当）の送受信・リクエスト構築・応答解析を提供する Rust ライブラリです。
 - 非同期ランタイム（tokio）環境で動作し、TCP と UDP の transport をサポートします。
 
-設計方針（要点）
+## 設計方針（要点）
+
 - 高レベル API は利便性重視で JSON (`serde_json::Value`) を返すものが多い。
 - 型安全な読み書きを望む場合は `FromWords` / `ToWords` トレイトを用いる補助 API (`read_words_as` / `write_words_as`) を使う。
 - 低レベルの MC フレーム組立／解析は `src/request.rs` / `src/response.rs` / `src/mc_frame.rs` に分離されている。
 
-主要ファイル
+## 主要ファイル
+
 - `src/lib.rs` — クレート再エクスポートと初期化ヘルパ（`init_defaults`）
 - `src/mc_client.rs` — 高レベルクライアント `McClient`（公開 API の大部分）
 - `src/request.rs` — `McRequest`（MC フレームの組立と復元）
@@ -19,7 +22,7 @@
 - `src/transport.rs` — TCP/UDP の送受信ロジック
 - `src/mc_define.rs` — 定数類（サブヘッダ、AccessRoute、Protocol 等）
 
-公開 API（代表シグネチャと契約）
+## 公開 API（代表シグネチャと契約）
 
 注: 下記は現行ソースの代表的なシグネチャを要約したものです。正確な詳細は各 `src/*.rs` を参照してください。
 
@@ -50,10 +53,11 @@
 - エコー
   - `pub async fn echo(&self, payload: &str) -> Result<String, MelsecError>` — ASCII hex 文字列を送信し、PLC からのエコーを文字列で返す。
 
-内部／補助 API
+## 内部／補助 API
+
 - `send_and_recv_with_retry(&self, mc_payload: &[u8], timeout: Option<Duration>) -> Result<Vec<u8>, MelsecError>` — 再試行付き送受信（非公開）
 
-主要型と補助トレイト
+## 主要型と補助トレイト
 
 - `MelsecError` (`src/error.rs`)
   - 列挙子: `Io(std::io::Error)`, `Timeout`, `Protocol(String)`, `AlreadyRegistered`, `NoTarget`
@@ -75,10 +79,11 @@
   - 既定実装: `u16`, `i16`, `[bool;16]`, `u32`, `i32`, `f32` などが実装されている。
 
 運用・テストに関する注意点
+
 - ログは `tracing`（もしくは `log` 経由）で出力される。詳細は `RUST_LOG` 環境変数で制御。
 - 実機比較テストはオプトイン（環境変数 `REAL_PLC_ADDR` や `REAL_PLC_STRICT` で制御）。CI では mock ベーステストを実行することが推奨される。
 
-使用例（実装に忠実な最小例）
+## 使用例（実装に忠実な最小例）
 
 ```rust
 use melsec_com::McClient;
@@ -148,6 +153,7 @@ pub trait ToWords {
 注: 上記には内部的に使われる非公開メソッド（例: `send_and_recv_with_retry` や `check_response_end_code`）は含めていません。必要ならそれらも追加できます。
 
 追加情報・参考
+
 - 低レイヤーのフレームパース（`src/mc_frame.rs`）やコマンド仕様（`src/command_registry.rs` / `commands.toml`）は、特定コマンドの request/response のビルド/パース挙動を確認する際に参照してください。
 
 このドキュメントは現行コードに合わせて随時更新してください。必要なら、各公開関数の完全シグネチャ一覧を自動で抽出して追記することもできます。

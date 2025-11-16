@@ -8,9 +8,11 @@ declare const window: any;
 declare global { interface Window { __TAURI__?: any } }
 const { invoke } = (window as any).__TAURI__.core as any;
 
-import { getCurrentFormat, setCurrentFormat, parseTarget, createInitialRows, startFallbackPolling, stopFallbackPolling, selectRow, setWordRow, isEventApiAvailable, initEventListeners } from './components/monitor';
+import { getCurrentFormat, setCurrentFormat, createInitialRows, startFallbackPolling, stopFallbackPolling, selectRow, setWordRow, isEventApiAvailable, initEventListeners, clearRows, setCurrentMonitorTarget } from './components/monitor';
+import { parseTarget, formatDisplayAddr } from './utils/device_helpers';
 
 const els: { [k: string]: HTMLElement | HTMLInputElement | null } = {} as any;
+
 
 function logMonitor(msg: string) {
   const out = document.getElementById('monitor-log') as HTMLPreElement | null;
@@ -111,11 +113,11 @@ window.addEventListener('DOMContentLoaded', () => {
           }
         } catch (e) {}
         // start monitor for current target (30 items)
-  const rawTarget = ((els['mon-target'] as HTMLInputElement).value || 'D').toString().trim().toUpperCase();
-  let parsed: any = parseTarget(rawTarget);
-  if (!parsed) parsed = { key: rawTarget.replace(/[^A-Z]/g, ''), addr: 0 } as any;
-        try { createInitialRows(parsed.key, parsed.addr, 30); } catch (e) {}
-        await startMonitorForTarget(parsed.key, parsed.addr);
+    const rawTarget = ((els['mon-target'] as HTMLInputElement).value || 'D').toString().trim().toUpperCase();
+    let parsed: any = parseTarget(rawTarget);
+    if (!parsed) parsed = { key: rawTarget.replace(/[^A-Z]/g, ''), addr: 0 } as any;
+      try { setCurrentMonitorTarget(parsed.key, parsed.addr); createInitialRows(parsed.key, parsed.addr, 30); } catch (e) {}
+      await startMonitorForTarget(parsed.key, parsed.addr);
   if (!isEventApiAvailable()) startFallbackPolling(parsed.key, parsed.addr, 500);
         // select and focus the initial row now that server is running
         try { selectRow(parsed.key, parsed.addr); const mt = document.getElementById('monitor-table') as HTMLElement | null; if (mt && typeof (mt as any).focus === 'function') (mt as any).focus(); } catch (e) {}
@@ -160,7 +162,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const raw = (monTargetEl.value || '').toString().trim().toUpperCase();
         let parsed: any = parseTarget(raw);
         if (!parsed) parsed = { key: raw.replace(/[^A-Z]/g, ''), addr: 0 } as any;
-        try { createInitialRows(parsed.key, parsed.addr, 30); } catch (err) {}
+        try { clearRows(); setCurrentMonitorTarget(parsed.key, parsed.addr); createInitialRows(parsed.key, parsed.addr, 30); } catch (err) {}
         // if mock is running, restart monitor for new target
         if (mockRunning) {
           try { await stopMonitor(); } catch (err) {}
@@ -238,7 +240,7 @@ window.addEventListener('DOMContentLoaded', () => {
       editTarget = { key: d.key, addr: d.addr };
       // always update popup title so it follows selection immediately when visible
       try {
-        if (editTitle) editTitle.textContent = `Write ${d.key}${d.addr}`;
+        if (editTitle) editTitle.textContent = `Write ${formatDisplayAddr(d.key, d.addr)}`;
         // if popup visible, clear value and focus input so user can type immediately
         if (editModal && editModal.style.display && editModal.style.display !== 'none') {
           if (editValue) { editValue.value = ''; try { editValue.focus(); } catch (e) {} }
@@ -249,7 +251,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   function showEditModal(key: string, addr: number) {
     editTarget = { key, addr };
-    if (editTitle) editTitle.textContent = `Write ${key}${addr}`;
+    if (editTitle) editTitle.textContent = `Write ${formatDisplayAddr(key, addr)}`;
     if (editValue) editValue.value = '';
   // set initial write-type to current monitor display format
   selectedWriteType = getCurrentFormat() || 'U16';
@@ -394,6 +396,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // save position on hide so last-known pos is kept
     try { savePopupPos(); } catch (e) {}
     editTarget = null;
+    // return focus to monitor table so arrow keys still navigate rows after closing
+    try {
+      const mt = document.getElementById('monitor-table') as HTMLElement | null;
+      if (mt && typeof (mt as any).focus === 'function') try { (mt as any).focus(); } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   // click handlers for write-type buttons
@@ -564,20 +571,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function parseTarget(s: string | null) {
-    if (!s) return null;
-    const up = s.toUpperCase().trim();
-    let i = 0; while (i < up.length && /[A-Z]/.test(up[i])) i++;
-    if (i === 0) return null;
-    const key = up.slice(0, i); const numPart = up.slice(i).trim(); if (!numPart) return null;
-    const isHex = /[A-F]/i.test(numPart);
-    const addr = isHex ? parseInt(numPart, 16) : parseInt(numPart, 10);
-    if (Number.isNaN(addr)) return null;
-    return { key, addr };
-  }
+  // parseTarget and formatDisplayAddr are provided by shared helpers
 
   function createInitialRows(key: string, addr: number, count: number) {
-    for (let i = 0; i < count; i++) setWordRow(key, addr + i, 0);
+    for (let i = 0; i < count; i++) {
+      const wordAddr = addr + i;
+      setWordRow(key, wordAddr, 0);
+    }
   }
 
   // Fallback polling is implemented in components/monitor
@@ -592,19 +592,21 @@ window.addEventListener('DOMContentLoaded', () => {
       if (!parsed) parsed = { key: rawTarget.replace(/[^A-Z]/g, ''), addr: 0 } as any;
       const count = 30;
       try {
+        // ensure headers match initial target
+        try { setCurrentMonitorTarget(parsed.key, parsed.addr); } catch (e) {}
         const vals: number[] = await invoke('get_words', { key: parsed.key, addr: parsed.addr, count: count });
         if (Array.isArray(vals) && vals.length > 0) {
           for (let i = 0; i < vals.length; i++) setWordRow(parsed.key, parsed.addr + i, vals[i] & 0xffff);
           if (vals.length < count) createInitialRows(parsed.key, parsed.addr + vals.length, count - vals.length);
-          logMonitor(`[TS] initial get_words populated ${vals.length} rows for ${parsed.key}${parsed.addr}`);
+          logMonitor(`[TS] initial get_words populated ${vals.length} rows for ${formatDisplayAddr(parsed.key, parsed.addr)}`);
         } else {
           createInitialRows(parsed.key, parsed.addr, count);
-          logMonitor(`[TS] initial get_words returned empty; created ${count} empty rows for ${parsed.key}${parsed.addr}`);
+          logMonitor(`[TS] initial get_words returned empty; created ${count} empty rows for ${formatDisplayAddr(parsed.key, parsed.addr)}`);
         }
       } catch (e) {
         // backend might not be running yet; create empty rows so UI has something
         createInitialRows(parsed.key, parsed.addr, count);
-        logMonitor(`[TS] initial get_words failed; created ${count} empty rows for ${parsed.key}${parsed.addr}: ${e}`);
+        logMonitor(`[TS] initial get_words failed; created ${count} empty rows for ${formatDisplayAddr(parsed.key, parsed.addr)}: ${e}`);
       }
     } catch (e) { /* ignore */ }
 

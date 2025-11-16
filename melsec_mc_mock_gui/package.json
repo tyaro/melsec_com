@@ -8,7 +8,9 @@
     "watch": "esbuild src/main.ts --bundle --outfile=src/dist/main.js --platform=browser --sourcemap --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/**/*.{ts,js} --ext .ts",
-    "lint:fix": "eslint src/**/*.{ts,js} --ext .ts --fix"
+    "lint:fix": "eslint src/**/*.{ts,js} --ext .ts --fix",
+    "pretauri": "npm run build",
+    "tauri": "npx @tauri-apps/cli dev"
   },
   "devDependencies": {
     "@types/jsdom": "^16.2.14",

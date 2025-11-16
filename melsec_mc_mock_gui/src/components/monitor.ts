@@ -9,6 +9,55 @@ const invoke: (...args: any[]) => Promise<any> = (window && (window as any).__TA
 export const latestWords: { [k:string]: number } = {};
 let currentFormatInternal = 'U16';
 
+// Currently selected monitor target; when non-null, incoming `monitor` events
+// or polling results for other targets will be ignored.
+export let currentMonitorTarget: { key: string; addr: number } | null = null;
+
+import { getBitConfigForKey, formatDisplayAddr, parseTarget } from '../utils/device_helpers';
+
+export function setCurrentMonitorTarget(key: string | null, addr?: number) {
+  if (!key) {
+    currentMonitorTarget = null;
+    updateBitHeadersForKey(null);
+  } else {
+    currentMonitorTarget = { key, addr: addr || 0 };
+    updateBitHeadersForKey(key);
+  }
+}
+
+// Update bit headers according to device family. Some devices (X/Y/B/W etc) are
+// 16-bit aligned and display 16 columns (F..0). Others like M are decade coils
+// and should display 10 columns (9..0).
+function updateBitHeadersForKey(key: string | null) {
+  const thead = document.querySelector('#monitor-table thead tr');
+  if (!thead) return;
+  // remove existing bit header cells (keep first and last two columns)
+  // structure: TH(Device) [bit headers...] TH(Display) TH(RAW)
+  // rebuild bit headers between the first TH and the last two THs
+  // clear all children then reconstruct to avoid fragile DOM ops
+  const displayTh = document.createElement('th'); displayTh.textContent = '表示';
+  const rawTh = document.createElement('th'); rawTh.textContent = 'RAW';
+  // determine bit labels
+  const bitCfg = getBitConfigForKey(key);
+  let bitLabels: string[] = [];
+  if (bitCfg.bits === 16) {
+    bitLabels = ['F','E','D','C','B','A','9','8','7','6','5','4','3','2','1','0'];
+  } else {
+    bitLabels = ['9','8','7','6','5','4','3','2','1','0'];
+  }
+  
+  // rebuild header
+  while (thead.firstChild) thead.removeChild(thead.firstChild);
+  const thDevice = document.createElement('th'); thDevice.textContent = 'デバイス'; thead.appendChild(thDevice);
+  for (const lb of bitLabels) {
+    const th = document.createElement('th'); th.className = 'bit-header'; th.textContent = lb; thead.appendChild(th);
+  }
+  thead.appendChild(displayTh);
+  thead.appendChild(rawTh);
+}
+
+// getBitConfigForKey provided by shared helper
+
 export function getCurrentFormat() { return currentFormatInternal; }
 export function setCurrentFormat(fmt: string) { currentFormatInternal = fmt; refreshAllRows(); try { if (window.localStorage) window.localStorage.setItem('displayFormat', currentFormatInternal); } catch(e) {} }
 
@@ -42,27 +91,32 @@ function uiLog(msg: string) {
   } catch (e) { try { console.log('[MON]', msg, e); } catch(_) {} }
 }
 
-export function parseTarget(s: string | null) {
-  if (!s) return null;
-  const up = s.toUpperCase().trim();
-  let i = 0; while (i < up.length && /[A-Z]/.test(up[i])) i++;
-  if (i === 0) return null;
-  let key = up.slice(0, i);
-  let numPart = up.slice(i).trim();
-  // handle cases like 'WFF' where the address is hex letters following a single-letter device code
-  if (!numPart && key.length > 1) {
-    numPart = key.slice(1);
-    key = key[0];
-  }
-  if (!numPart) return null;
-  const isHex = /[A-F]/i.test(numPart);
-  const addr = isHex ? parseInt(numPart, 16) : parseInt(numPart, 10);
-  if (Number.isNaN(addr)) return null;
-  return { key, addr };
-}
+// parseTarget is provided by shared helper
 
 export function createInitialRows(key: string, addr: number, count: number) {
-  for (let i = 0; i < count; i++) setWordRow(key, addr + i, 0);
+  for (let i = 0; i < count; i++) {
+    const wordAddr = addr + i;
+    setWordRow(key, wordAddr, 0);
+  }
+}
+
+// Clear all rendered rows and internal cache
+export function clearRows() {
+  try {
+    // clear internal cache
+    for (const k in latestWords) delete latestWords[k];
+    // remove DOM rows
+    const tbody = document.getElementById('monitor-tbody') as HTMLTableSectionElement | null;
+    if (tbody) {
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    }
+    // stop any fallback polling to avoid get_words calls for removed devices
+    try { stopFallbackPolling(); } catch (e) {}
+    // clear current monitor target so incoming events are ignored until set
+    currentMonitorTarget = null;
+  } catch (e) {
+    console.warn('clearRows failed', e);
+  }
 }
 
 export function setWordRow(key: string, addr: number, word: number) {
@@ -93,12 +147,15 @@ function renderRowForWord(key: string, addr: number, word: number) {
       tr.id = rowId;
       const tdLabel = document.createElement('td');
       tdLabel.className = 'device-label';
-      tdLabel.textContent = `${key}${addr}`;
+      // use shared formatter for display address
+      tdLabel.textContent = formatDisplayAddr(key, addr);
       tr.appendChild(tdLabel);
-      for (let b = 15; b >= 0; b--) {
+      // create bit cells according to device family
+      const bitCfg = getBitConfigForKey(key);
+      for (let i = bitCfg.bits - 1; i >= 0; i--) {
         const td = document.createElement('td');
         td.className = 'bit-cell bit-off';
-        td.dataset.bitIndex = b.toString();
+        td.dataset.bitIndex = i.toString();
         tr.appendChild(td);
       }
       const tdFormat = document.createElement('td'); tdFormat.className = 'format-cell'; tr.appendChild(tdFormat);
@@ -106,10 +163,11 @@ function renderRowForWord(key: string, addr: number, word: number) {
       tbody.appendChild(tr);
       tr.addEventListener('click', () => { try { selectRow(key, addr); } catch (e) {} });
     }
+    const bitCfg = getBitConfigForKey(key);
     const bitCells = tr.querySelectorAll('td.bit-cell');
-    if (!bitCells || bitCells.length < 16) return;
-    for (let i = 0; i < 16; i++) {
-      const b = 15 - i;
+    if (!bitCells || bitCells.length < bitCfg.bits) return;
+    for (let i = 0; i < bitCfg.bits; i++) {
+      const b = bitCfg.bits - 1 - i;
       const on = ((word >> b) & 1) === 1;
       const cell = bitCells[i];
       if (cell) {
@@ -120,7 +178,8 @@ function renderRowForWord(key: string, addr: number, word: number) {
     const formatCell = tr.querySelector('td.format-cell') as HTMLTableCellElement | null;
     const rawCell = tr.querySelector('td.raw-cell') as HTMLTableCellElement | null;
     const u16 = word & 0xffff;
-    const hex = `0x${u16.toString(16).toUpperCase().padStart(4,'0')}`;
+    const bitCfg2 = getBitConfigForKey(key);
+    const hex = bitCfg2.bits === 16 ? `0x${u16.toString(16).toUpperCase().padStart(4,'0')}` : `0x${(u16 & ((1<<bitCfg2.bits)-1)).toString(16).toUpperCase()}`;
     let s16 = u16; if ((u16 & 0x8000) !== 0) s16 = u16 - 0x10000;
     tr.classList.remove('paired-empty');
     if (['U32','I32','F32'].includes(currentFormatInternal)) {
@@ -148,7 +207,7 @@ function renderRowForWord(key: string, addr: number, word: number) {
         tr.classList.add('paired-empty');
       }
     } else {
-      if (currentFormatInternal === 'BIN') { if (formatCell) formatCell.textContent = `0b${u16.toString(2).padStart(16,'0')}`; }
+    if (currentFormatInternal === 'BIN') { if (formatCell) formatCell.textContent = `0b${u16.toString(2).padStart(bitCfg2.bits,'0')}`; }
       else if (currentFormatInternal === 'U16') { if (formatCell) formatCell.textContent = `${u16}`; }
       else if (currentFormatInternal === 'I16') { if (formatCell) formatCell.textContent = `${s16}`; }
       else if (currentFormatInternal === 'HEX') { if (formatCell) formatCell.textContent = `${hex}`; }
@@ -196,6 +255,11 @@ export async function initEventListeners() {
       await window.__TAURI__.event.listen('monitor', (event: any) => {
         const payload = event.payload; try {
           const addr = payload.addr; const key = payload.key; const vals: number[] = payload.vals || [];
+          // ignore events for other targets when a current target is set
+          if (currentMonitorTarget && (currentMonitorTarget.key !== key || currentMonitorTarget.addr !== addr)) {
+            uiLog(`monitor event ignored for key=${key} addr=${addr} (current target ${currentMonitorTarget.key}${currentMonitorTarget.addr})`);
+            return;
+          }
           // UI-visible debug: log minimal payload so developer can correlate with backend
           try { uiLog(`monitor event received key=${key} addr=${addr} vals0=${vals.length>0?vals[0]:'<empty>'} len=${vals.length}`); } catch(e) {}
           if (vals.length === 0) setWordRow(key, addr, 0);

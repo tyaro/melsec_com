@@ -191,6 +191,11 @@ async fn get_words(state: tauri::State<'_, Arc<AppState>>, key: String, addr: us
 fn start_monitor(window: tauri::Window, state: tauri::State<'_, Arc<AppState>>, key: String, addr: usize, count: usize, interval_ms: u64) -> Result<(), String> {
     let app = state.inner();
     let server = app.server.clone();
+    // if a monitor task is already running, abort it before starting a new one
+    if let Some(h) = app.monitor_handle.lock().unwrap().take() {
+        h.abort();
+        debug!("[TAURI BACKEND] previous monitor task aborted before starting new one");
+    }
     // store cfg
     *app.monitor_cfg.lock().unwrap() = Some((key.clone(), addr, count, interval_ms));
     let win = window.clone();

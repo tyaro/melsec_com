@@ -12,7 +12,8 @@ describe('monitor component basic behaviors', () => {
   it('parseTarget parses decimal and hex addresses', () => {
     expect(parseTarget('D0')).toEqual({ key: 'D', addr: 0 });
     expect(parseTarget('D10')).toEqual({ key: 'D', addr: 10 });
-    expect(parseTarget('WFF')).toEqual({ key: 'W', addr: 0xFF });
+    // WFF -> raw 0xFF, word-index = Math.floor(0xFF / 0x10) = 0xF
+    expect(parseTarget('WFF')).toEqual({ key: 'W', addr: 0xF });
   });
 
   it('createInitialRows makes 30 rows', () => {

@@ -14,6 +14,7 @@ let currentFormatInternal = 'U16';
 export let currentMonitorTarget: { key: string; addr: number } | null = null;
 
 import { getBitConfigForKey, formatDisplayAddr, parseTarget } from '../utils/device_helpers';
+export { parseTarget } from '../utils/device_helpers';
 
 export function setCurrentMonitorTarget(key: string | null, addr?: number) {
   if (!key) {

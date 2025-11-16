@@ -235,6 +235,8 @@ pub fn run() {
         Err(e) => info!("[TAURI BACKEND] cwd error: {:?}", e),
     }
 
+    // (no-op) startup; debug logging will be produced by command handlers
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(state)

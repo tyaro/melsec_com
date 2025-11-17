@@ -8,7 +8,7 @@ declare const window: any;
 declare global { interface Window { __TAURI__?: any } }
 const { invoke } = (window as any).__TAURI__.core as any;
 
-import { getCurrentFormat, setCurrentFormat, createInitialRows, startFallbackPolling, stopFallbackPolling, selectRow, setWordRow, isEventApiAvailable, initEventListeners, clearRows, setCurrentMonitorTarget } from './components/monitor';
+import { getCurrentFormat, setCurrentFormat, createInitialRows, startFallbackPolling, stopFallbackPolling, selectRow, setWordRow, isEventApiAvailable, initEventListeners, clearRows, setCurrentMonitorTarget, ensureMonitorInitialized } from './components/monitor';
 import { parseTarget, formatDisplayAddr } from './utils/device_helpers';
 
 const els: { [k: string]: HTMLElement | HTMLInputElement | null } = {} as any;
@@ -572,14 +572,6 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   // parseTarget and formatDisplayAddr are provided by shared helpers
-
-  function createInitialRows(key: string, addr: number, count: number) {
-    for (let i = 0; i < count; i++) {
-      const wordAddr = addr + i;
-      setWordRow(key, wordAddr, 0);
-    }
-  }
-
   // Fallback polling is implemented in components/monitor
 
   // On UI startup, prefetch initial rows for the current monitor target so the table
@@ -603,6 +595,9 @@ window.addEventListener('DOMContentLoaded', () => {
           createInitialRows(parsed.key, parsed.addr, count);
           logMonitor(`[TS] initial get_words returned empty; created ${count} empty rows for ${formatDisplayAddr(parsed.key, parsed.addr)}`);
         }
+        try { /* ensure monitor UI handlers/prefetch are attached even when vals.length == count */
+          try { ensureMonitorInitialized(parsed.key, parsed.addr); } catch (e) {}
+        } catch (e) {}
       } catch (e) {
         // backend might not be running yet; create empty rows so UI has something
         createInitialRows(parsed.key, parsed.addr, count);
